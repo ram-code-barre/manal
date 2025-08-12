@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aviation Warehouse Management System</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="container">
+                <h1>Aviation Warehouse Management System</h1>
+                <div class="header-stats">
+                    <div class="stat-item">
+                        <span class="stat-value" id="total-materials">0</span>
+                        <span class="stat-label">Materials</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="total-racks">0</span>
+                        <span class="stat-label">Racks</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="total-placements">0</span>
+                        <span class="stat-label">Placements</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <main class="main-content">
+            <div class="container">
+                <!-- Navigation Tabs -->
+                <nav class="tab-nav">
+                    <button class="tab-button active" data-tab="dashboard">Dashboard</button>
+                    <button class="tab-button" data-tab="reception">Reception</button>
+                    <button class="tab-button" data-tab="rayonnage">Rayonnage</button>
+                    <button class="tab-button" data-tab="placement">Placement</button>
+                    <button class="tab-button" data-tab="data">Data Management</button>
+                </nav>
+
+                <!-- Dashboard Tab -->
+                <div id="dashboard" class="tab-content active">
+                    <h2>Dashboard</h2>
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card" data-tab="reception">
+                            <div class="card-icon">📦</div>
+                            <h3>Reception</h3>
+                            <p>Register new materials and generate barcodes</p>
+                            <div class="card-stats">
+                                <span id="dashboard-materials">0</span> materials registered
+                            </div>
+                        </div>
+                        <div class="dashboard-card" data-tab="rayonnage">
+                            <div class="card-icon">🏭</div>
+                            <h3>Rayonnage Management</h3>
+                            <p>Create and manage rack locations</p>
+                            <div class="card-stats">
+                                <span id="dashboard-racks">0</span> rack locations
+                            </div>
+                        </div>
+                        <div class="dashboard-card" data-tab="placement">
+                            <div class="card-icon">📍</div>
+                            <h3>Placement</h3>
+                            <p>Place materials in rack locations</p>
+                            <div class="card-stats">
+                                <span id="dashboard-placements">0</span> placements made
+                            </div>
+                        </div>
+                        <div class="dashboard-card" data-tab="data">
+                            <div class="card-icon">📊</div>
+                            <h3>Data Management</h3>
+                            <p>Export, import and manage data</p>
+                            <div class="card-stats">
+                                Export to Google Sheets
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reception Tab -->
+                <div id="reception" class="tab-content">
+                    <h2>Material Reception</h2>
+                    <div class="module-container">
+                        <div class="form-section">
+                            <form id="material-form" class="material-form">
+                                <div class="form-group">
+                                    <label class="form-label" for="part-number">Part Number (P/N) *</label>
+                                    <input type="text" id="part-number" name="part-number" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="serial-number">Serial Number (S/N) *</label>
+                                    <input type="text" id="serial-number" name="serial-number" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="material-type">Material Type</label>
+                                    <select id="material-type" name="material-type" class="form-control">
+                                        <option value="Electronic">Electronic</option>
+                                        <option value="Mechanical">Mechanical</option>
+                                        <option value="Hydraulic">Hydraulic</option>
+                                        <option value="Structural">Structural</option>
+                                        <option value="Avionics">Avionics</option>
+                                        <option value="Engine">Engine</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="description">Description</label>
+                                    <textarea id="description" name="description" class="form-control" rows="3"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="supplier">Supplier</label>
+                                    <input type="text" id="supplier" name="supplier" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="date-received">Date Received</label>
+                                    <input type="date" id="date-received" name="date-received" class="form-control">
+                                </div>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn--primary">Generate Material Barcode</button>
+                                    <button type="button" class="btn btn--secondary" onclick="clearForm('material-form')">Clear Form</button>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="barcode-section" id="material-barcode-section" style="display: none;">
+                            <h3>Generated Material Barcode</h3>
+                            <div class="barcode-display">
+                                <canvas id="material-barcode"></canvas>
+                                <div class="barcode-info" id="material-barcode-info"></div>
+                            </div>
+                            <div class="barcode-actions">
+                                <button class="btn btn--primary" onclick="printBarcode('material-barcode')">Print Label</button>
+                                <button class="btn btn--secondary" onclick="downloadCertificate()">Download Certificate</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="materials-list">
+                        <h3>Recent Materials</h3>
+                        <div id="materials-display"></div>
+                    </div>
+                </div>
+
+                <!-- Rayonnage Tab -->
+                <div id="rayonnage" class="tab-content">
+                    <h2>Rayonnage Management</h2>
+                    <div class="module-container">
+                        <div class="form-section">
+                            <form id="rack-form" class="rack-form">
+                                <div class="form-group">
+                                    <label class="form-label" for="zone">Zone</label>
+                                    <select id="zone" name="zone" class="form-control">
+                                        <option value="A">A</option>
+                                        <option value="B">B</option>
+                                        <option value="C">C</option>
+                                        <option value="D">D</option>
+                                        <option value="E">E</option>
+                                        <option value="F">F</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="row">Row (01-20)</label>
+                                    <select id="row" name="row" class="form-control">
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                        <option value="13">13</option>
+                                        <option value="14">14</option>
+                                        <option value="15">15</option>
+                                        <option value="16">16</option>
+                                        <option value="17">17</option>
+                                        <option value="18">18</option>
+                                        <option value="19">19</option>
+                                        <option value="20">20</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="level">Level (01-10)</label>
+                                    <select id="level" name="level" class="form-control">
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="rack-description">Description</label>
+                                    <textarea id="rack-description" name="rack-description" class="form-control" rows="2"></textarea>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn--primary">Generate Rack Barcode</button>
+                                    <button type="button" class="btn btn--secondary" onclick="clearForm('rack-form')">Clear Form</button>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="barcode-section" id="rack-barcode-section" style="display: none;">
+                            <h3>Generated Rack Barcode</h3>
+                            <div class="barcode-display">
+                                <canvas id="rack-barcode"></canvas>
+                                <div class="barcode-info" id="rack-barcode-info"></div>
+                            </div>
+                            <div class="barcode-actions">
+                                <button class="btn btn--primary" onclick="printBarcode('rack-barcode')">Print Label</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="racks-list">
+                        <h3>Rack Locations</h3>
+                        <div id="racks-display"></div>
+                    </div>
+                </div>
+
+                <!-- Placement Tab -->
+                <div id="placement" class="tab-content">
+                    <h2>Material Placement</h2>
+                    <div class="placement-workflow">
+                        <div class="step-indicator">
+                            <div class="step active" id="step-1-indicator">
+                                <span class="step-number">1</span>
+                                <span class="step-label">Scan Material</span>
+                            </div>
+                            <div class="step" id="step-2-indicator">
+                                <span class="step-number">2</span>
+                                <span class="step-label">Scan Rack</span>
+                            </div>
+                            <div class="step" id="step-3-indicator">
+                                <span class="step-number">3</span>
+                                <span class="step-label">Confirm</span>
+                            </div>
+                        </div>
+                        
+                        <div class="placement-step active" id="placement-step-1">
+                            <h3>Step 1: Scan/Enter Material Barcode</h3>
+                            <div class="form-group">
+                                <label class="form-label" for="material-barcode-input">Material Barcode</label>
+                                <input type="text" id="material-barcode-input" name="material-barcode-input" class="form-control" placeholder="Scan or enter material barcode">
+                            </div>
+                            <button class="btn btn--primary" onclick="processMaterialBarcode()">Continue</button>
+                        </div>
+
+                        <div class="placement-step" id="placement-step-2">
+                            <h3>Step 2: Scan/Enter Rack Barcode</h3>
+                            <div class="selected-material" id="selected-material-display"></div>
+                            <div class="form-group">
+                                <label class="form-label" for="rack-barcode-input">Rack Barcode</label>
+                                <input type="text" id="rack-barcode-input" name="rack-barcode-input" class="form-control" placeholder="Scan or enter rack barcode">
+                            </div>
+                            <div class="form-actions">
+                                <button class="btn btn--primary" onclick="processRackBarcode()">Continue</button>
+                                <button class="btn btn--secondary" onclick="resetPlacement()">Start Over</button>
+                            </div>
+                        </div>
+
+                        <div class="placement-step" id="placement-step-3">
+                            <h3>Step 3: Confirm Placement</h3>
+                            <div class="placement-confirmation" id="placement-confirmation"></div>
+                            <div class="form-actions">
+                                <button class="btn btn--primary" onclick="confirmPlacement()">Confirm Placement</button>
+                                <button class="btn btn--secondary" onclick="resetPlacement()">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="placements-history">
+                        <h3>Recent Placements</h3>
+                        <div id="placements-display"></div>
+                    </div>
+                </div>
+
+                <!-- Data Management Tab -->
+                <div id="data" class="tab-content">
+                    <h2>Data Management</h2>
+                    <div class="data-management">
+                        <div class="data-export-section">
+                            <h3>Export Data</h3>
+                            <div class="export-options">
+                                <button class="btn btn--primary" onclick="exportToCSV('materials')">Export Materials to CSV</button>
+                                <button class="btn btn--primary" onclick="exportToCSV('racks')">Export Racks to CSV</button>
+                                <button class="btn btn--primary" onclick="exportToCSV('placements')">Export Placements to CSV</button>
+                                <button class="btn btn--primary" onclick="exportAllData()">Export All Data to JSON</button>
+                            </div>
+                        </div>
+                        
+                        <div class="data-import-section">
+                            <h3>Import Data</h3>
+                            <div class="form-group">
+                                <label class="form-label" for="import-file">Select JSON file to import</label>
+                                <input type="file" id="import-file" name="import-file" class="form-control" accept=".json">
+                            </div>
+                            <button class="btn btn--secondary" onclick="importData()">Import Data</button>
+                        </div>
+                        
+                        <div class="data-clear-section">
+                            <h3>Clear Data</h3>
+                            <p>Warning: This will permanently delete all stored data.</p>
+                            <button class="btn btn--outline" style="border-color: var(--color-error); color: var(--color-error);" onclick="clearAllData()">Clear All Data</button>
+                        </div>
+                        
+                        <div class="data-tables">
+                            <div class="data-table-section">
+                                <h3>Materials Data</h3>
+                                <div id="materials-table"></div>
+                            </div>
+                            <div class="data-table-section">
+                                <h3>Racks Data</h3>
+                                <div id="racks-table"></div>
+                            </div>
+                            <div class="data-table-section">
+                                <h3>Placements Data</h3>
+                                <div id="placements-table"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Notification System -->
+        <div id="notification" class="notification hidden">
+            <div class="notification-content">
+                <span class="notification-message"></span>
+                <button class="notification-close" onclick="hideNotification()">×</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
