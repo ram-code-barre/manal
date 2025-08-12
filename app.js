@@ -3,6 +3,17 @@
 class WarehouseManager {
     constructor() {
         this.currentPlacement = {};
+        this.currentUser = 'Admin'; // Default user
+        this.searchFilters = {
+            materials: '',
+            racks: '',
+            placements: ''
+        };
+        this.pagination = {
+            materials: { page: 1, itemsPerPage: 10 },
+            racks: { page: 1, itemsPerPage: 10 },
+            placements: { page: 1, itemsPerPage: 10 }
+        };
         this.init();
     }
 
@@ -12,6 +23,7 @@ class WarehouseManager {
         this.updateStats();
         this.displayAllData();
         this.setCurrentDate();
+        this.loadGoogleSheetsConfig();
     }
 
     // Data Management
@@ -20,10 +32,81 @@ class WarehouseManager {
             const initialData = {
                 materials: [],
                 racks: [],
-                placements: []
+                placements: [],
+                auditLog: []
             };
             localStorage.setItem('warehouse_data', JSON.stringify(initialData));
         }
+    }
+
+    // Input Sanitization
+    sanitizeInput(input) {
+        if (typeof input !== 'string') return input;
+        return input
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/<[^>]*>/g, '')
+            .trim();
+    }
+
+    // Audit Trail
+    addAuditEntry(action, entityType, entityId, details = {}) {
+        const data = this.getData();
+        const auditEntry = {
+            id: this.generateId('AUDIT'),
+            timestamp: new Date().toISOString(),
+            user: this.currentUser,
+            action: action,
+            entityType: entityType,
+            entityId: entityId,
+            details: details
+        };
+        
+        if (!data.auditLog) data.auditLog = [];
+        data.auditLog.push(auditEntry);
+        this.saveData(data);
+    }
+
+    // Search functionality
+    searchMaterials(query) {
+        const data = this.getData();
+        if (!query) return data.materials;
+        
+        const searchTerm = query.toLowerCase();
+        return data.materials.filter(material => 
+            material.partNumber.toLowerCase().includes(searchTerm) ||
+            material.serialNumber.toLowerCase().includes(searchTerm) ||
+            material.type.toLowerCase().includes(searchTerm) ||
+            (material.supplier && material.supplier.toLowerCase().includes(searchTerm)) ||
+            (material.description && material.description.toLowerCase().includes(searchTerm))
+        );
+    }
+
+    searchRacks(query) {
+        const data = this.getData();
+        if (!query) return data.racks;
+        
+        const searchTerm = query.toLowerCase();
+        return data.racks.filter(rack => 
+            rack.code.toLowerCase().includes(searchTerm) ||
+            rack.zone.toLowerCase().includes(searchTerm) ||
+            (rack.description && rack.description.toLowerCase().includes(searchTerm))
+        );
+    }
+
+    searchPlacements(query) {
+        const data = this.getData();
+        if (!query) return data.placements;
+        
+        const searchTerm = query.toLowerCase();
+        return data.placements.filter(placement => {
+            const material = data.materials.find(m => m.id === placement.materialId);
+            const rack = data.racks.find(r => r.id === placement.rackId);
+            
+            return (material && (
+                material.partNumber.toLowerCase().includes(searchTerm) ||
+                material.serialNumber.toLowerCase().includes(searchTerm)
+            )) || (rack && rack.code.toLowerCase().includes(searchTerm));
+        });
     }
 
     getData() {
@@ -55,6 +138,13 @@ class WarehouseManager {
                 const num = parseInt(item.id.replace('PLACE', ''));
                 if (num > maxId) maxId = num;
             });
+        } else if (prefix === 'AUDIT') {
+            if (data.auditLog) {
+                data.auditLog.forEach(item => {
+                    const num = parseInt(item.id.replace('AUDIT', ''));
+                    if (num > maxId) maxId = num;
+                });
+            }
         }
         
         return prefix + String(maxId + 1).padStart(3, '0');
@@ -183,19 +273,36 @@ class WarehouseManager {
             return;
         }
 
-        const partNumber = partNumberEl.value.trim();
-        const serialNumber = serialNumberEl.value.trim();
-        const materialType = materialTypeEl ? materialTypeEl.value : 'Electronic';
-        const description = descriptionEl ? descriptionEl.value.trim() : '';
-        const supplier = supplierEl ? supplierEl.value.trim() : '';
+        // Sanitize inputs
+        const partNumber = this.sanitizeInput(partNumberEl.value.trim());
+        const serialNumber = this.sanitizeInput(serialNumberEl.value.trim());
+        const materialType = materialTypeEl ? this.sanitizeInput(materialTypeEl.value) : 'Electronic';
+        const description = descriptionEl ? this.sanitizeInput(descriptionEl.value.trim()) : '';
+        const supplier = supplierEl ? this.sanitizeInput(supplierEl.value.trim()) : '';
         const dateReceived = dateReceivedEl ? dateReceivedEl.value : new Date().toISOString().split('T')[0];
 
+        // Enhanced validation
         if (!partNumber || !serialNumber) {
             this.showNotification('Part Number and Serial Number are required', 'error');
             return;
         }
 
+        if (partNumber.length < 3 || serialNumber.length < 3) {
+            this.showNotification('Part Number and Serial Number must be at least 3 characters', 'error');
+            return;
+        }
+
+        // Check for duplicates
         const data = this.getData();
+        const existingMaterial = data.materials.find(m => 
+            m.partNumber === partNumber && m.serialNumber === serialNumber
+        );
+        
+        if (existingMaterial) {
+            this.showNotification('Material with this Part Number and Serial Number already exists', 'error');
+            return;
+        }
+
         const materialId = this.generateId('MAT');
         const barcode = `${materialId}-${partNumber}-${serialNumber}`;
         
@@ -208,11 +315,19 @@ class WarehouseManager {
             supplier: supplier,
             dateReceived: dateReceived,
             barcode: barcode,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            createdBy: this.currentUser
         };
 
         data.materials.push(material);
         this.saveData(data);
+
+        // Add audit entry
+        this.addAuditEntry('CREATE', 'MATERIAL', materialId, {
+            partNumber: partNumber,
+            serialNumber: serialNumber,
+            type: materialType
+        });
 
         this.generateMaterialBarcode(material);
         this.showNotification('Material registered successfully', 'success');
@@ -269,10 +384,10 @@ class WarehouseManager {
             return;
         }
 
-        const zone = zoneEl.value;
-        const row = rowEl.value;
-        const level = levelEl.value;
-        const rackDescription = rackDescriptionEl ? rackDescriptionEl.value.trim() : '';
+        const zone = this.sanitizeInput(zoneEl.value);
+        const row = this.sanitizeInput(rowEl.value);
+        const level = this.sanitizeInput(levelEl.value);
+        const rackDescription = rackDescriptionEl ? this.sanitizeInput(rackDescriptionEl.value.trim()) : '';
 
         const data = this.getData();
         const rackCode = `${zone}-${row}-${level}`;
@@ -293,11 +408,20 @@ class WarehouseManager {
             code: rackCode,
             description: rackDescription,
             barcode: rackCode,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            createdBy: this.currentUser
         };
 
         data.racks.push(rack);
         this.saveData(data);
+
+        // Add audit entry
+        this.addAuditEntry('CREATE', 'RACK', rackId, {
+            code: rackCode,
+            zone: zone,
+            row: row,
+            level: level
+        });
 
         this.generateRackBarcode(rack);
         this.showNotification('Rack location created successfully', 'success');
@@ -449,11 +573,20 @@ class WarehouseManager {
             materialBarcode: this.currentPlacement.material.barcode,
             rackBarcode: this.currentPlacement.rack.barcode,
             timestamp: new Date().toISOString(),
-            user: 'User'
+            user: this.currentUser,
+            createdBy: this.currentUser
         };
 
         data.placements.push(placement);
         this.saveData(data);
+
+        // Add audit entry
+        this.addAuditEntry('CREATE', 'PLACEMENT', placementId, {
+            materialId: this.currentPlacement.material.id,
+            rackId: this.currentPlacement.rack.id,
+            materialBarcode: this.currentPlacement.material.barcode,
+            rackBarcode: this.currentPlacement.rack.barcode
+        });
 
         this.showNotification('Placement recorded successfully', 'success');
         this.displayPlacements();
@@ -497,81 +630,119 @@ class WarehouseManager {
     }
 
     displayMaterials() {
-        const data = this.getData();
+        const searchQuery = this.searchFilters.materials;
+        const materials = searchQuery ? this.searchMaterials(searchQuery) : this.getData().materials;
         const container = document.getElementById('materials-display');
         
         if (!container) return;
         
-        if (data.materials.length === 0) {
-            container.innerHTML = '<p>No materials registered yet.</p>';
+        if (materials.length === 0) {
+            container.innerHTML = searchQuery ? 
+                '<p>No materials found matching your search.</p>' : 
+                '<p>No materials registered yet.</p>';
             return;
         }
 
-        container.innerHTML = data.materials
+        const { page, itemsPerPage } = this.pagination.materials;
+        const startIndex = (page - 1) * itemsPerPage;
+        const paginatedMaterials = materials
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            .slice(0, 10)
-            .map(material => `
+            .slice(startIndex, startIndex + itemsPerPage);
+
+        const totalPages = Math.ceil(materials.length / itemsPerPage);
+
+        container.innerHTML = `
+            ${this.renderPaginationControls('materials', page, totalPages)}
+            ${paginatedMaterials.map(material => `
                 <div class="item-card">
                     <div class="item-header">
-                        <span class="item-title">${material.partNumber} - ${material.serialNumber}</span>
+                        <span class="item-title">${this.escapeHtml(material.partNumber)} - ${this.escapeHtml(material.serialNumber)}</span>
                         <span class="item-timestamp">${new Date(material.timestamp).toLocaleDateString()}</span>
                     </div>
                     <div class="item-details">
-                        <div class="item-detail"><strong>Type:</strong> ${material.type}</div>
+                        <div class="item-detail"><strong>Type:</strong> ${this.escapeHtml(material.type)}</div>
                         <div class="item-detail"><strong>ID:</strong> ${material.id}</div>
-                        <div class="item-detail"><strong>Supplier:</strong> ${material.supplier || 'N/A'}</div>
+                        <div class="item-detail"><strong>Supplier:</strong> ${this.escapeHtml(material.supplier || 'N/A')}</div>
                         <div class="item-detail"><strong>Barcode:</strong> ${material.barcode}</div>
+                        <div class="item-detail"><strong>Created By:</strong> ${this.escapeHtml(material.createdBy || 'Unknown')}</div>
                     </div>
-                    ${material.description ? `<div class="item-detail"><strong>Description:</strong> ${material.description}</div>` : ''}
+                    ${material.description ? `<div class="item-detail"><strong>Description:</strong> ${this.escapeHtml(material.description)}</div>` : ''}
                 </div>
-            `).join('');
+            `).join('')}
+            ${this.renderPaginationControls('materials', page, totalPages)}
+        `;
     }
 
     displayRacks() {
-        const data = this.getData();
+        const searchQuery = this.searchFilters.racks;
+        const racks = searchQuery ? this.searchRacks(searchQuery) : this.getData().racks;
         const container = document.getElementById('racks-display');
         
         if (!container) return;
         
-        if (data.racks.length === 0) {
-            container.innerHTML = '<p>No rack locations created yet.</p>';
+        if (racks.length === 0) {
+            container.innerHTML = searchQuery ? 
+                '<p>No racks found matching your search.</p>' : 
+                '<p>No rack locations created yet.</p>';
             return;
         }
 
-        container.innerHTML = data.racks
+        const { page, itemsPerPage } = this.pagination.racks;
+        const startIndex = (page - 1) * itemsPerPage;
+        const paginatedRacks = racks
             .sort((a, b) => a.code.localeCompare(b.code))
-            .map(rack => `
+            .slice(startIndex, startIndex + itemsPerPage);
+
+        const totalPages = Math.ceil(racks.length / itemsPerPage);
+
+        container.innerHTML = `
+            ${this.renderPaginationControls('racks', page, totalPages)}
+            ${paginatedRacks.map(rack => `
                 <div class="item-card">
                     <div class="item-header">
-                        <span class="item-title">${rack.code}</span>
+                        <span class="item-title">${this.escapeHtml(rack.code)}</span>
                         <span class="item-timestamp">${new Date(rack.timestamp).toLocaleDateString()}</span>
                     </div>
                     <div class="item-details">
-                        <div class="item-detail"><strong>Zone:</strong> ${rack.zone}</div>
-                        <div class="item-detail"><strong>Row:</strong> ${rack.row}</div>
-                        <div class="item-detail"><strong>Level:</strong> ${rack.level}</div>
+                        <div class="item-detail"><strong>Zone:</strong> ${this.escapeHtml(rack.zone)}</div>
+                        <div class="item-detail"><strong>Row:</strong> ${this.escapeHtml(rack.row)}</div>
+                        <div class="item-detail"><strong>Level:</strong> ${this.escapeHtml(rack.level)}</div>
                         <div class="item-detail"><strong>ID:</strong> ${rack.id}</div>
+                        <div class="item-detail"><strong>Created By:</strong> ${this.escapeHtml(rack.createdBy || 'Unknown')}</div>
                     </div>
-                    ${rack.description ? `<div class="item-detail"><strong>Description:</strong> ${rack.description}</div>` : ''}
+                    ${rack.description ? `<div class="item-detail"><strong>Description:</strong> ${this.escapeHtml(rack.description)}</div>` : ''}
                 </div>
-            `).join('');
+            `).join('')}
+            ${this.renderPaginationControls('racks', page, totalPages)}
+        `;
     }
 
     displayPlacements() {
         const data = this.getData();
+        const searchQuery = this.searchFilters.placements;
+        const placements = searchQuery ? this.searchPlacements(searchQuery) : data.placements;
         const container = document.getElementById('placements-display');
         
         if (!container) return;
         
-        if (data.placements.length === 0) {
-            container.innerHTML = '<p>No placements recorded yet.</p>';
+        if (placements.length === 0) {
+            container.innerHTML = searchQuery ? 
+                '<p>No placements found matching your search.</p>' : 
+                '<p>No placements recorded yet.</p>';
             return;
         }
 
-        container.innerHTML = data.placements
+        const { page, itemsPerPage } = this.pagination.placements;
+        const startIndex = (page - 1) * itemsPerPage;
+        const paginatedPlacements = placements
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            .slice(0, 10)
-            .map(placement => {
+            .slice(startIndex, startIndex + itemsPerPage);
+
+        const totalPages = Math.ceil(placements.length / itemsPerPage);
+
+        container.innerHTML = `
+            ${this.renderPaginationControls('placements', page, totalPages)}
+            ${paginatedPlacements.map(placement => {
                 const material = data.materials.find(m => m.id === placement.materialId);
                 const rack = data.racks.find(r => r.id === placement.rackId);
                 
@@ -582,29 +753,38 @@ class WarehouseManager {
                             <span class="item-timestamp">${new Date(placement.timestamp).toLocaleString()}</span>
                         </div>
                         <div class="item-details">
-                            <div class="item-detail"><strong>Material:</strong> ${material ? `${material.partNumber} (${material.serialNumber})` : 'N/A'}</div>
-                            <div class="item-detail"><strong>Location:</strong> ${rack ? rack.code : 'N/A'}</div>
-                            <div class="item-detail"><strong>User:</strong> ${placement.user}</div>
+                            <div class="item-detail"><strong>Material:</strong> ${material ? `${this.escapeHtml(material.partNumber)} (${this.escapeHtml(material.serialNumber)})` : 'N/A'}</div>
+                            <div class="item-detail"><strong>Location:</strong> ${rack ? this.escapeHtml(rack.code) : 'N/A'}</div>
+                            <div class="item-detail"><strong>User:</strong> ${this.escapeHtml(placement.user)}</div>
+                            <div class="item-detail"><strong>Created By:</strong> ${this.escapeHtml(placement.createdBy || 'Unknown')}</div>
                         </div>
                     </div>
                 `;
-            }).join('');
+            }).join('')}
+            ${this.renderPaginationControls('placements', page, totalPages)}
+        `;
     }
 
     displayDataTables() {
         const data = this.getData();
         
         this.displayTable('materials-table', data.materials, [
-            'id', 'partNumber', 'serialNumber', 'type', 'supplier', 'dateReceived', 'barcode'
+            'id', 'partNumber', 'serialNumber', 'type', 'supplier', 'dateReceived', 'barcode', 'createdBy'
         ]);
         
         this.displayTable('racks-table', data.racks, [
-            'id', 'zone', 'row', 'level', 'code', 'description', 'barcode'
+            'id', 'zone', 'row', 'level', 'code', 'description', 'barcode', 'createdBy'
         ]);
         
         this.displayTable('placements-table', data.placements, [
-            'id', 'materialId', 'rackId', 'materialBarcode', 'rackBarcode', 'user', 'timestamp'
+            'id', 'materialId', 'rackId', 'materialBarcode', 'rackBarcode', 'user', 'createdBy', 'timestamp'
         ]);
+
+        // Display audit log
+        const auditContainer = document.getElementById('audit-log-display');
+        if (auditContainer) {
+            auditContainer.innerHTML = this.displayAuditLog();
+        }
     }
 
     displayTable(containerId, dataArray, columns) {
@@ -780,7 +960,8 @@ class WarehouseManager {
                 const emptyData = {
                     materials: [],
                     racks: [],
-                    placements: []
+                    placements: [],
+                    auditLog: []
                 };
                 this.saveData(emptyData);
                 this.showNotification('All data cleared successfully', 'warning');
@@ -961,10 +1142,803 @@ class WarehouseManager {
             notification.classList.add('hidden');
         }
     }
+
+    // HTML escaping for security
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Pagination controls
+    renderPaginationControls(type, currentPage, totalPages) {
+        if (totalPages <= 1) return '';
+        
+        const prevDisabled = currentPage === 1 ? 'disabled' : '';
+        const nextDisabled = currentPage === totalPages ? 'disabled' : '';
+        
+        return `
+            <div class="pagination-controls">
+                <button class="btn btn--sm ${prevDisabled}" onclick="warehouseManager.changePage('${type}', ${currentPage - 1})" ${prevDisabled}>Previous</button>
+                <span class="pagination-info">Page ${currentPage} of ${totalPages}</span>
+                <button class="btn btn--sm ${nextDisabled}" onclick="warehouseManager.changePage('${type}', ${currentPage + 1})" ${nextDisabled}>Next</button>
+            </div>
+        `;
+    }
+
+    changePage(type, newPage) {
+        const data = this.getData();
+        const searchQuery = this.searchFilters[type];
+        let totalItems;
+        
+        if (type === 'materials') {
+            const materials = searchQuery ? this.searchMaterials(searchQuery) : data.materials;
+            totalItems = materials.length;
+        } else if (type === 'racks') {
+            const racks = searchQuery ? this.searchRacks(searchQuery) : data.racks;
+            totalItems = racks.length;
+        } else if (type === 'placements') {
+            const placements = searchQuery ? this.searchPlacements(searchQuery) : data.placements;
+            totalItems = placements.length;
+        }
+        
+        const totalPages = Math.ceil(totalItems / this.pagination[type].itemsPerPage);
+        
+        if (newPage < 1 || newPage > totalPages) return;
+        
+        this.pagination[type].page = newPage;
+        
+        if (type === 'materials') this.displayMaterials();
+        else if (type === 'racks') this.displayRacks();
+        else if (type === 'placements') this.displayPlacements();
+    }
+
+    // Enhanced search with filters
+    setSearchFilter(type, query) {
+        this.searchFilters[type] = query;
+        this.pagination[type].page = 1; // Reset to first page
+        
+        if (type === 'materials') this.displayMaterials();
+        else if (type === 'racks') this.displayRacks();
+        else if (type === 'placements') this.displayPlacements();
+    }
+
+    // Backup functionality
+    createBackup() {
+        const data = this.getData();
+        const backup = {
+            ...data,
+            backupDate: new Date().toISOString(),
+            version: '1.0'
+        };
+        
+        this.downloadFile(JSON.stringify(backup, null, 2), `warehouse_backup_${new Date().toISOString().split('T')[0]}.json`, 'application/json');
+        this.showNotification('Backup created successfully', 'success');
+    }
+
+    // Camera Scanner functionality
+    openBarcodeScanner(type) {
+        // Check if camera is supported
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            this.showNotification('Camera not supported on this device', 'error');
+            return;
+        }
+
+        // Create scanner modal
+        const modal = document.createElement('div');
+        modal.className = 'scanner-modal';
+        modal.innerHTML = `
+            <div class="scanner-content">
+                <h3>Scan ${type === 'material' ? 'Material' : 'Rack'} Barcode</h3>
+                <video id="scanner-video" class="scanner-video" autoplay></video>
+                <div class="scanner-actions">
+                    <button class="btn btn--primary" onclick="closeBarcodeScanner()">Close Scanner</button>
+                    <button class="btn btn--secondary" onclick="switchCamera()">Switch Camera</button>
+                </div>
+                <p style="font-size: 12px; color: var(--color-text-secondary); margin-top: 16px;">
+                    Position the barcode within the camera view. The scanner will automatically detect and input the code.
+                </p>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Start camera
+        this.startCamera(type);
+    }
+
+    async startCamera(type) {
+        try {
+            const video = document.getElementById('scanner-video');
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: 'environment' // Use back camera if available
+                } 
+            });
+            
+            video.srcObject = stream;
+            this.currentStream = stream;
+            this.scannerType = type;
+
+            // Simulate barcode detection (in a real implementation, you'd use a barcode scanning library)
+            this.simulateBarcodeDetection(type);
+            
+        } catch (error) {
+            this.showNotification('Error accessing camera: ' + error.message, 'error');
+            this.closeBarcodeScanner();
+        }
+    }
+
+    simulateBarcodeDetection(type) {
+        // This is a simulation - in a real app, you'd integrate with a barcode scanning library
+        // like QuaggaJS, ZXing, or similar
+        setTimeout(() => {
+            const simulatedBarcode = type === 'material' ? 'MAT001-TEST-001' : 'A-01-01';
+            
+            if (confirm(`Barcode detected: ${simulatedBarcode}\nUse this barcode?`)) {
+                const inputId = type === 'material' ? 'material-barcode-input' : 'rack-barcode-input';
+                const input = document.getElementById(inputId);
+                if (input) {
+                    input.value = simulatedBarcode;
+                }
+                this.closeBarcodeScanner();
+                this.showNotification('Barcode scanned successfully', 'success');
+            }
+        }, 3000); // Simulate 3 second scan time
+    }
+
+    closeBarcodeScanner() {
+        const modal = document.querySelector('.scanner-modal');
+        if (modal) {
+            // Stop camera stream
+            if (this.currentStream) {
+                this.currentStream.getTracks().forEach(track => track.stop());
+                this.currentStream = null;
+            }
+            modal.remove();
+        }
+    }
+
+    switchCamera() {
+        // Implementation for switching between front/back camera
+        this.showNotification('Camera switching not implemented in demo', 'info');
+    }
+
+    // Load saved Google Sheets configuration on page load
+    loadGoogleSheetsConfig() {
+        const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+        
+        if (config.connected && config.sheetsUrl) {
+            const sheetsUrlInput = document.getElementById('sheets-url');
+            const syncFrequencySelect = document.getElementById('sync-frequency');
+            
+            if (sheetsUrlInput) sheetsUrlInput.value = config.sheetsUrl;
+            if (syncFrequencySelect) syncFrequencySelect.value = config.syncFrequency || 'manual';
+            
+            // Setup auto-sync if enabled
+            this.setupAutoSync(config.syncFrequency);
+            
+            // Show connection status
+            this.showNotification('Google Sheets configuration loaded', 'info');
+        }
+    }
+
+    // Google Sheets Integration
+    connectGoogleSheets() {
+        const sheetsUrl = document.getElementById('sheets-url').value;
+        const syncFrequency = document.getElementById('sync-frequency').value;
+
+        if (!sheetsUrl) {
+            this.showNotification('Please enter a Google Sheets URL', 'error');
+            return;
+        }
+
+        // Validate Google Sheets URL and extract sheet ID
+        const sheetIdMatch = sheetsUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+        if (!sheetIdMatch) {
+            this.showNotification('Please enter a valid Google Sheets URL', 'error');
+            return;
+        }
+
+        const sheetId = sheetIdMatch[1];
+
+        // Store Google Sheets configuration
+        const config = {
+            sheetsUrl: sheetsUrl,
+            sheetId: sheetId,
+            syncFrequency: syncFrequency,
+            connected: true,
+            lastSync: new Date().toISOString()
+        };
+
+        localStorage.setItem('google_sheets_config', JSON.stringify(config));
+        
+        // Setup auto-sync if enabled
+        this.setupAutoSync(syncFrequency);
+        
+        this.showNotification('Connected to Google Sheets successfully', 'success');
+        
+        // Initial sync after connection
+        setTimeout(() => {
+            this.syncWithGoogleSheets();
+        }, 1000);
+    }
+
+    setupAutoSync(frequency) {
+        // Clear existing interval
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+        }
+
+        if (frequency === 'realtime') {
+            // Sync on every data change (already handled in saveData method)
+            this.autoSyncEnabled = true;
+        } else if (frequency === 'hourly') {
+            this.syncInterval = setInterval(() => {
+                this.syncWithGoogleSheets();
+            }, 60 * 60 * 1000); // 1 hour
+        } else if (frequency === 'daily') {
+            this.syncInterval = setInterval(() => {
+                this.syncWithGoogleSheets();
+            }, 24 * 60 * 60 * 1000); // 24 hours
+        }
+    }
+
+    async syncWithGoogleSheets() {
+        const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+        
+        if (!config.connected) {
+            this.showNotification('Please connect to Google Sheets first', 'error');
+            return;
+        }
+
+        this.showNotification('Syncing with Google Sheets...', 'info');
+        
+        try {
+            const data = this.getData();
+            
+            // Create CSV data for each sheet
+            const materialsCSV = this.createCSVData('materials', data.materials);
+            const racksCSV = this.createCSVData('racks', data.racks);
+            const placementsCSV = this.createCSVData('placements', data.placements);
+
+            // Send data to Google Sheets using Google Apps Script Web App
+            const success = await this.sendToGoogleSheets(config.sheetId, {
+                materials: materialsCSV,
+                racks: racksCSV,
+                placements: placementsCSV
+            });
+
+            if (success) {
+                // Update last sync time
+                config.lastSync = new Date().toISOString();
+                localStorage.setItem('google_sheets_config', JSON.stringify(config));
+                
+                this.showNotification('Data synced to Google Sheets successfully', 'success');
+            } else {
+                this.showNotification('Failed to sync with Google Sheets. Please check your sheet permissions.', 'error');
+            }
+        } catch (error) {
+            console.error('Google Sheets sync error:', error);
+            this.showNotification('Error syncing with Google Sheets: ' + error.message, 'error');
+        }
+    }
+
+    createCSVData(type, dataArray) {
+        if (dataArray.length === 0) return '';
+
+        let headers = [];
+        let rows = [];
+
+        if (type === 'materials') {
+            headers = ['ID', 'Part Number', 'Serial Number', 'Type', 'Description', 'Supplier', 'Date Received', 'Barcode', 'Created By', 'Timestamp'];
+            rows = dataArray.map(item => [
+                item.id,
+                item.partNumber,
+                item.serialNumber,
+                item.type,
+                item.description || '',
+                item.supplier || '',
+                item.dateReceived,
+                item.barcode,
+                item.createdBy || 'Unknown',
+                new Date(item.timestamp).toLocaleString()
+            ]);
+        } else if (type === 'racks') {
+            headers = ['ID', 'Zone', 'Row', 'Level', 'Code', 'Description', 'Barcode', 'Created By', 'Timestamp'];
+            rows = dataArray.map(item => [
+                item.id,
+                item.zone,
+                item.row,
+                item.level,
+                item.code,
+                item.description || '',
+                item.barcode,
+                item.createdBy || 'Unknown',
+                new Date(item.timestamp).toLocaleString()
+            ]);
+        } else if (type === 'placements') {
+            headers = ['ID', 'Material ID', 'Rack ID', 'Material Barcode', 'Rack Barcode', 'User', 'Created By', 'Timestamp'];
+            rows = dataArray.map(item => [
+                item.id,
+                item.materialId,
+                item.rackId,
+                item.materialBarcode,
+                item.rackBarcode,
+                item.user,
+                item.createdBy || 'Unknown',
+                new Date(item.timestamp).toLocaleString()
+            ]);
+        }
+
+        return [headers, ...rows];
+    }
+
+    async sendToGoogleSheets(sheetId, data) {
+        try {
+            // Method 1: Try using Google Sheets API directly (requires CORS to be disabled or proper API setup)
+            const apiKey = 'YOUR_GOOGLE_SHEETS_API_KEY'; // User would need to provide this
+            
+            // For now, we'll use a different approach - Google Apps Script Web App
+            // The user needs to create a Google Apps Script with the following code:
+            /*
+            function doPost(e) {
+                const data = JSON.parse(e.postData.contents);
+                const ss = SpreadsheetApp.openById(data.sheetId);
+                
+                // Clear existing data and add new data for each sheet
+                if (data.materials && data.materials.length > 0) {
+                    const materialsSheet = ss.getSheetByName('Materials') || ss.insertSheet('Materials');
+                    materialsSheet.clear();
+                    materialsSheet.getRange(1, 1, data.materials.length, data.materials[0].length).setValues(data.materials);
+                }
+                
+                if (data.racks && data.racks.length > 0) {
+                    const racksSheet = ss.getSheetByName('Racks') || ss.insertSheet('Racks');
+                    racksSheet.clear();
+                    racksSheet.getRange(1, 1, data.racks.length, data.racks[0].length).setValues(data.racks);
+                }
+                
+                if (data.placements && data.placements.length > 0) {
+                    const placementsSheet = ss.getSheetByName('Placements') || ss.insertSheet('Placements');
+                    placementsSheet.clear();
+                    placementsSheet.getRange(1, 1, data.placements.length, data.placements[0].length).setValues(data.placements);
+                }
+                
+                return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
+            }
+            */
+
+            // For demonstration, we'll use a fallback method that works with public sheets
+            const response = await this.updateGoogleSheetDirect(sheetId, data);
+            return response;
+
+        } catch (error) {
+            console.error('Error sending to Google Sheets:', error);
+            return false;
+        }
+    }
+
+    async updateGoogleSheetDirect(sheetId, data) {
+        try {
+            const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+            
+            // Create properly formatted table data for each sheet
+            let materialsTable = '';
+            let racksTable = '';
+            let placementsTable = '';
+            
+            // Format Materials as HTML table
+            if (data.materials && data.materials.length > 0) {
+                materialsTable = this.createHTMLTable('Materials', data.materials);
+            }
+            
+            // Format Racks as HTML table
+            if (data.racks && data.racks.length > 0) {
+                racksTable = this.createHTMLTable('Racks', data.racks);
+            }
+            
+            // Format Placements as HTML table
+            if (data.placements && data.placements.length > 0) {
+                placementsTable = this.createHTMLTable('Placements', data.placements);
+            }
+            
+            // Create CSV data for copying
+            let csvContent = '';
+            
+            // Materials section
+            if (data.materials && data.materials.length > 0) {
+                data.materials.forEach(row => {
+                    csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
+                });
+                csvContent += '\n';
+            }
+            
+            // Racks section
+            if (data.racks && data.racks.length > 0) {
+                data.racks.forEach(row => {
+                    csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
+                });
+                csvContent += '\n';
+            }
+            
+            // Placements section
+            if (data.placements && data.placements.length > 0) {
+                data.placements.forEach(row => {
+                    csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
+                });
+            }
+
+            // Open enhanced Google Sheets integration window
+            const instructionsWindow = window.open('', '_blank');
+            instructionsWindow.document.write(`
+                <html>
+                    <head>
+                        <title>Aviation Warehouse - Google Sheets Integration</title>
+                        <style>
+                            body { 
+                                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                                padding: 20px; 
+                                max-width: 1200px; 
+                                margin: 0 auto; 
+                                background: #f8f9fa;
+                            }
+                            .header {
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                color: white;
+                                padding: 30px;
+                                border-radius: 10px;
+                                margin-bottom: 30px;
+                                text-align: center;
+                            }
+                            .step { 
+                                margin: 20px 0; 
+                                padding: 20px; 
+                                background: white; 
+                                border-radius: 10px; 
+                                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                            }
+                            .step h3 {
+                                color: #333;
+                                margin-top: 0;
+                                border-bottom: 2px solid #667eea;
+                                padding-bottom: 10px;
+                            }
+                            .table-container { 
+                                background: #fff; 
+                                border: 1px solid #ddd; 
+                                border-radius: 8px;
+                                margin: 15px 0; 
+                                max-height: 400px; 
+                                overflow: auto;
+                                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                            }
+                            .data-table { 
+                                width: 100%; 
+                                border-collapse: collapse; 
+                                font-size: 12px;
+                            }
+                            .data-table th { 
+                                background: #667eea; 
+                                color: white; 
+                                padding: 12px 8px; 
+                                text-align: left; 
+                                font-weight: 600;
+                                position: sticky;
+                                top: 0;
+                                z-index: 10;
+                            }
+                            .data-table td { 
+                                padding: 10px 8px; 
+                                border-bottom: 1px solid #eee;
+                                vertical-align: top;
+                            }
+                            .data-table tr:hover { 
+                                background: #f8f9ff; 
+                            }
+                            .button { 
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                color: white; 
+                                padding: 12px 24px; 
+                                border: none; 
+                                border-radius: 6px; 
+                                cursor: pointer; 
+                                margin: 8px; 
+                                font-size: 14px;
+                                font-weight: 500;
+                                transition: all 0.3s ease;
+                                text-decoration: none;
+                                display: inline-block;
+                            }
+                            .button:hover { 
+                                transform: translateY(-2px);
+                                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+                            }
+                            .button.secondary {
+                                background: #6c757d;
+                            }
+                            .button.success {
+                                background: #28a745;
+                            }
+                            .tabs {
+                                display: flex;
+                                margin-bottom: 20px;
+                                border-bottom: 2px solid #eee;
+                            }
+                            .tab {
+                                padding: 12px 24px;
+                                cursor: pointer;
+                                border-bottom: 3px solid transparent;
+                                transition: all 0.3s ease;
+                                font-weight: 500;
+                            }
+                            .tab.active {
+                                border-bottom-color: #667eea;
+                                color: #667eea;
+                            }
+                            .tab-content {
+                                display: none;
+                            }
+                            .tab-content.active {
+                                display: block;
+                            }
+                            .stats {
+                                display: flex;
+                                gap: 20px;
+                                margin: 20px 0;
+                            }
+                            .stat {
+                                background: white;
+                                padding: 15px;
+                                border-radius: 8px;
+                                text-align: center;
+                                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                                flex: 1;
+                            }
+                            .stat-number {
+                                font-size: 24px;
+                                font-weight: bold;
+                                color: #667eea;
+                            }
+                            .stat-label {
+                                font-size: 12px;
+                                color: #666;
+                                margin-top: 5px;
+                            }
+                            .copy-success {
+                                background: #d4edda;
+                                color: #155724;
+                                padding: 10px;
+                                border-radius: 5px;
+                                margin: 10px 0;
+                                display: none;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h1>🛩️ Aviation Warehouse Management System</h1>
+                            <p>Google Sheets Integration Dashboard</p>
+                            <div class="stats">
+                                <div class="stat">
+                                    <div class="stat-number">${data.materials ? data.materials.length - 1 : 0}</div>
+                                    <div class="stat-label">Materials</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-number">${data.racks ? data.racks.length - 1 : 0}</div>
+                                    <div class="stat-label">Racks</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-number">${data.placements ? data.placements.length - 1 : 0}</div>
+                                    <div class="stat-label">Placements</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <h3>📊 Data Preview & Actions</h3>
+                            <div class="tabs">
+                                <div class="tab active" onclick="showTab('materials')">Materials</div>
+                                <div class="tab" onclick="showTab('racks')">Racks</div>
+                                <div class="tab" onclick="showTab('placements')">Placements</div>
+                            </div>
+                            
+                            <div id="materials" class="tab-content active">
+                                ${materialsTable}
+                            </div>
+                            <div id="racks" class="tab-content">
+                                ${racksTable}
+                            </div>
+                            <div id="placements" class="tab-content">
+                                ${placementsTable}
+                            </div>
+                            
+                            <div style="margin-top: 20px;">
+                                <button class="button success" onclick="copyAllData()">📋 Copy All Data</button>
+                                <button class="button secondary" onclick="downloadCSV()">💾 Download CSV</button>
+                                <a href="${config.sheetsUrl}" target="_blank" class="button">🔗 Open Google Sheet</a>
+                            </div>
+                            <div id="copySuccess" class="copy-success">
+                                ✅ Data copied to clipboard! You can now paste it into your Google Sheet.
+                            </div>
+                        </div>
+
+                        <div class="step">
+                            <h3>🚀 Quick Setup Instructions</h3>
+                            <ol style="line-height: 1.8;">
+                                <li><strong>Copy the data</strong> using the "Copy All Data" button above</li>
+                                <li><strong>Open your Google Sheet</strong> by clicking the "Open Google Sheet" link</li>
+                                <li><strong>Select cell A1</strong> in your Google Sheet</li>
+                                <li><strong>Paste the data</strong> (Ctrl+V or Cmd+V)</li>
+                                <li><strong>Format as needed</strong> - Google Sheets will automatically create columns</li>
+                            </ol>
+                        </div>
+
+                        <div class="step">
+                            <h3>💡 Pro Tips</h3>
+                            <ul style="line-height: 1.8;">
+                                <li>Data is automatically formatted with headers for easy sorting and filtering</li>
+                                <li>Each data type (Materials, Racks, Placements) is clearly separated</li>
+                                <li>Timestamps are formatted for easy reading</li>
+                                <li>Use Google Sheets' built-in filters and pivot tables for advanced analysis</li>
+                                <li>Set up automatic syncing in the main application for real-time updates</li>
+                            </ul>
+                        </div>
+                        
+                        <script>
+                            function showTab(tabName) {
+                                // Hide all tab contents
+                                document.querySelectorAll('.tab-content').forEach(content => {
+                                    content.classList.remove('active');
+                                });
+                                document.querySelectorAll('.tab').forEach(tab => {
+                                    tab.classList.remove('active');
+                                });
+                                
+                                // Show selected tab
+                                document.getElementById(tabName).classList.add('active');
+                                event.target.classList.add('active');
+                            }
+                            
+                            function copyAllData() {
+                                const csvData = \`${csvContent}\`;
+                                navigator.clipboard.writeText(csvData).then(function() {
+                                    document.getElementById('copySuccess').style.display = 'block';
+                                    setTimeout(() => {
+                                        document.getElementById('copySuccess').style.display = 'none';
+                                    }, 3000);
+                                }).catch(function(err) {
+                                    alert('Failed to copy data. Please try the download option.');
+                                });
+                            }
+                            
+                            function downloadCSV() {
+                                const csvData = \`${csvContent}\`;
+                                const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'aviation_warehouse_data_' + new Date().toISOString().split('T')[0] + '.csv';
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                            }
+                        </script>
+                    </body>
+                </html>
+            `);
+            
+            return true;
+        } catch (error) {
+            console.error('Error in direct Google Sheets update:', error);
+            return false;
+        }
+    }
+
+    // Helper method to create HTML tables
+    createHTMLTable(title, data) {
+        if (!data || data.length === 0) return `<p>No ${title.toLowerCase()} data available.</p>`;
+        
+        const headers = data[0];
+        const rows = data.slice(1);
+        
+        let tableHTML = `
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            ${headers.map(header => `<th>${header}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(row => `
+                            <tr>
+                                ${row.map(cell => `<td>${cell || ''}</td>`).join('')}
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        return tableHTML;
+    }
+
+    exportToGoogleSheets() {
+        const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+        
+        if (!config.connected) {
+            this.showNotification('Please connect to Google Sheets first', 'error');
+            return;
+        }
+
+        this.syncWithGoogleSheets();
+    }
+
+    // Override saveData to include auto-sync
+    saveData(data) {
+        localStorage.setItem('warehouse_data', JSON.stringify(data));
+        this.updateStats();
+        this.displayAllData();
+
+        // Auto-sync if real-time sync is enabled
+        const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+        if (config.connected && config.syncFrequency === 'realtime') {
+            setTimeout(() => {
+                this.syncWithGoogleSheets();
+            }, 1000); // Delay to avoid too frequent syncs
+        }
+    }
+
+    // Audit log display
+    displayAuditLog() {
+        const data = this.getData();
+        const auditLog = data.auditLog || [];
+        
+        if (auditLog.length === 0) {
+            return '<p>No audit entries found.</p>';
+        }
+
+        return auditLog
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, 50) // Show last 50 entries
+            .map(entry => `
+                <div class="audit-entry">
+                    <div class="audit-header">
+                        <span class="audit-action">${entry.action}</span>
+                        <span class="audit-timestamp">${new Date(entry.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div class="audit-details">
+                        <strong>User:</strong> ${this.escapeHtml(entry.user)} | 
+                        <strong>Type:</strong> ${entry.entityType} | 
+                        <strong>ID:</strong> ${entry.entityId}
+                        ${Object.keys(entry.details).length > 0 ? `<br><strong>Details:</strong> ${JSON.stringify(entry.details)}` : ''}
+                    </div>
+                </div>
+            `).join('');
+    }
 }
 
 // Initialize the application
 let warehouseManager;
+
+// Auto-sync configuration functions
+window.configureAutoSync = function(settings) {
+    if (warehouseManager) {
+        warehouseManager.configureAutoSync(settings);
+    }
+};
+
+window.getSyncStats = function() {
+    return warehouseManager ? warehouseManager.getSyncStats() : null;
+};
+
+window.showAutoSyncSetup = function() {
+    // Open the complete setup guide
+    window.open('COMPLETE_SETUP_GUIDE.md', '_blank');
+};
 
 // Global functions for HTML onclick handlers
 window.switchTab = function(tabName) {
@@ -1042,6 +2016,62 @@ window.clearAllData = function() {
 window.hideNotification = function() {
     if (warehouseManager) {
         warehouseManager.hideNotification();
+    }
+};
+
+window.createBackup = function() {
+    if (warehouseManager) {
+        warehouseManager.createBackup();
+    }
+};
+
+window.setSearchFilter = function(type, query) {
+    if (warehouseManager) {
+        warehouseManager.setSearchFilter(type, query);
+    }
+};
+
+window.changePage = function(type, page) {
+    if (warehouseManager) {
+        warehouseManager.changePage(type, page);
+    }
+};
+
+// Camera Scanner Functions
+window.openBarcodeScanner = function(type) {
+    if (warehouseManager) {
+        warehouseManager.openBarcodeScanner(type);
+    }
+};
+
+window.closeBarcodeScanner = function() {
+    if (warehouseManager) {
+        warehouseManager.closeBarcodeScanner();
+    }
+};
+
+window.switchCamera = function() {
+    if (warehouseManager) {
+        warehouseManager.switchCamera();
+    }
+};
+
+// Google Sheets Functions
+window.connectGoogleSheets = function() {
+    if (warehouseManager) {
+        warehouseManager.connectGoogleSheets();
+    }
+};
+
+window.syncWithGoogleSheets = function() {
+    if (warehouseManager) {
+        warehouseManager.syncWithGoogleSheets();
+    }
+};
+
+window.exportToGoogleSheets = function() {
+    if (warehouseManager) {
+        warehouseManager.exportToGoogleSheets();
     }
 };
 

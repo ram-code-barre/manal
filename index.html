@@ -138,7 +138,13 @@
                         </div>
                     </div>
                     <div class="materials-list">
-                        <h3>Recent Materials</h3>
+                        <div class="search-section">
+                            <h3>Materials</h3>
+                            <div class="search-controls">
+                                <input type="text" id="materials-search" class="form-control" placeholder="Search materials..." onkeyup="warehouseManager.setSearchFilter('materials', this.value)">
+                                <button class="btn btn--secondary" onclick="document.getElementById('materials-search').value=''; warehouseManager.setSearchFilter('materials', '');">Clear</button>
+                            </div>
+                        </div>
                         <div id="materials-display"></div>
                     </div>
                 </div>
@@ -222,7 +228,13 @@
                         </div>
                     </div>
                     <div class="racks-list">
-                        <h3>Rack Locations</h3>
+                        <div class="search-section">
+                            <h3>Rack Locations</h3>
+                            <div class="search-controls">
+                                <input type="text" id="racks-search" class="form-control" placeholder="Search racks..." onkeyup="warehouseManager.setSearchFilter('racks', this.value)">
+                                <button class="btn btn--secondary" onclick="document.getElementById('racks-search').value=''; warehouseManager.setSearchFilter('racks', '');">Clear</button>
+                            </div>
+                        </div>
                         <div id="racks-display"></div>
                     </div>
                 </div>
@@ -250,7 +262,12 @@
                             <h3>Step 1: Scan/Enter Material Barcode</h3>
                             <div class="form-group">
                                 <label class="form-label" for="material-barcode-input">Material Barcode</label>
-                                <input type="text" id="material-barcode-input" name="material-barcode-input" class="form-control" placeholder="Scan or enter material barcode">
+                                <div class="barcode-input-container">
+                                    <input type="text" id="material-barcode-input" name="material-barcode-input" class="form-control" placeholder="Scan or enter material barcode">
+                                    <button class="btn btn--secondary camera-btn" onclick="openBarcodeScanner('material')" title="Open Camera Scanner">
+                                        📷
+                                    </button>
+                                </div>
                             </div>
                             <button class="btn btn--primary" onclick="processMaterialBarcode()">Continue</button>
                         </div>
@@ -260,7 +277,12 @@
                             <div class="selected-material" id="selected-material-display"></div>
                             <div class="form-group">
                                 <label class="form-label" for="rack-barcode-input">Rack Barcode</label>
-                                <input type="text" id="rack-barcode-input" name="rack-barcode-input" class="form-control" placeholder="Scan or enter rack barcode">
+                                <div class="barcode-input-container">
+                                    <input type="text" id="rack-barcode-input" name="rack-barcode-input" class="form-control" placeholder="Scan or enter rack barcode">
+                                    <button class="btn btn--secondary camera-btn" onclick="openBarcodeScanner('rack')" title="Open Camera Scanner">
+                                        📷
+                                    </button>
+                                </div>
                             </div>
                             <div class="form-actions">
                                 <button class="btn btn--primary" onclick="processRackBarcode()">Continue</button>
@@ -279,7 +301,13 @@
                     </div>
                     
                     <div class="placements-history">
-                        <h3>Recent Placements</h3>
+                        <div class="search-section">
+                            <h3>Placements</h3>
+                            <div class="search-controls">
+                                <input type="text" id="placements-search" class="form-control" placeholder="Search placements..." onkeyup="warehouseManager.setSearchFilter('placements', this.value)">
+                                <button class="btn btn--secondary" onclick="document.getElementById('placements-search').value=''; warehouseManager.setSearchFilter('placements', '');">Clear</button>
+                            </div>
+                        </div>
                         <div id="placements-display"></div>
                     </div>
                 </div>
@@ -290,11 +318,84 @@
                     <div class="data-management">
                         <div class="data-export-section">
                             <h3>Export Data</h3>
-                            <div class="export-options">
-                                <button class="btn btn--primary" onclick="exportToCSV('materials')">Export Materials to CSV</button>
-                                <button class="btn btn--primary" onclick="exportToCSV('racks')">Export Racks to CSV</button>
-                                <button class="btn btn--primary" onclick="exportToCSV('placements')">Export Placements to CSV</button>
-                                <button class="btn btn--primary" onclick="exportAllData()">Export All Data to JSON</button>
+                        <div class="export-options">
+                            <button class="btn btn--primary" onclick="exportToCSV('materials')">Export Materials to CSV</button>
+                            <button class="btn btn--primary" onclick="exportToCSV('racks')">Export Racks to CSV</button>
+                            <button class="btn btn--primary" onclick="exportToCSV('placements')">Export Placements to CSV</button>
+                            <button class="btn btn--primary" onclick="exportAllData()">Export All Data to JSON</button>
+                            <button class="btn btn--primary" onclick="exportToGoogleSheets()">📊 Export to Google Sheets</button>
+                        </div>
+                        
+                        <div class="google-sheets-section">
+                            <h4>🔄 Automatic Google Sheets Integration</h4>
+                            
+                            <!-- Sync Status Display -->
+                            <div class="sync-status-display">
+                                <div class="sync-indicator" id="sync-indicator">⚪ Not Connected</div>
+                                <div class="sync-details">
+                                    <span id="sync-status" class="status">Disconnected</span>
+                                    <span id="last-sync-time">Never synced</span>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" for="sheets-url">Google Sheets URL</label>
+                                <input type="url" id="sheets-url" name="sheets-url" class="form-control" placeholder="https://docs.google.com/spreadsheets/d/your-sheet-id/edit">
+                                <small class="form-help">Paste your Google Sheets URL here for automatic data sync</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" for="web-app-url">Google Apps Script Web App URL (Optional)</label>
+                                <input type="url" id="web-app-url" name="web-app-url" class="form-control" placeholder="https://script.google.com/macros/s/your-script-id/exec">
+                                <small class="form-help">For advanced automatic sync - see setup guide</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" for="sync-frequency">Automatic Sync Frequency</label>
+                                <select id="sync-frequency" name="sync-frequency" class="form-control">
+                                    <option value="manual">Manual Only</option>
+                                    <option value="realtime">Real-time (Sync on every change)</option>
+                                    <option value="minute">Every Minute</option>
+                                    <option value="hourly">Every Hour</option>
+                                    <option value="daily">Daily</option>
+                                </select>
+                                <small class="form-help">Choose how often to automatically sync your data</small>
+                            </div>
+                            
+                            <div class="auto-sync-controls">
+                                <div class="form-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="auto-sync-toggle" name="auto-sync-toggle">
+                                        <span class="checkmark"></span>
+                                        Enable Automatic Sync
+                                    </label>
+                                    <small class="form-help">When enabled, data will sync automatically based on the frequency above</small>
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button class="btn btn--primary" onclick="connectGoogleSheets()">🔗 Connect to Google Sheets</button>
+                                <button class="btn btn--secondary" onclick="syncWithGoogleSheets()">🔄 Sync Now</button>
+                                <button class="btn btn--outline" onclick="showAutoSyncSetup()">📖 Setup Guide</button>
+                            </div>
+                            
+                            <!-- Sync Statistics -->
+                            <div class="sync-stats" id="sync-stats" style="display: none;">
+                                <h5>Sync Statistics</h5>
+                                <div class="stats-grid">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Total Syncs</span>
+                                        <span class="stat-value" id="total-syncs">0</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Last Sync</span>
+                                        <span class="stat-value" id="last-sync-date">Never</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Status</span>
+                                        <span class="stat-value" id="sync-status-text">Inactive</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         
@@ -307,10 +408,24 @@
                             <button class="btn btn--secondary" onclick="importData()">Import Data</button>
                         </div>
                         
+                        <div class="data-backup-section">
+                            <h3>Backup & Restore</h3>
+                            <div class="backup-options">
+                                <button class="btn btn--primary" onclick="warehouseManager.createBackup()">Create Backup</button>
+                                <p>Create a complete backup of all warehouse data including audit logs.</p>
+                            </div>
+                        </div>
+                        
                         <div class="data-clear-section">
                             <h3>Clear Data</h3>
                             <p>Warning: This will permanently delete all stored data.</p>
                             <button class="btn btn--outline" style="border-color: var(--color-error); color: var(--color-error);" onclick="clearAllData()">Clear All Data</button>
+                        </div>
+                        
+                        <div class="audit-log-section">
+                            <h3>Audit Log</h3>
+                            <p>Track all system activities and changes.</p>
+                            <div id="audit-log-display"></div>
                         </div>
                         
                         <div class="data-tables">
