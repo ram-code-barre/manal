@@ -14,6 +14,9 @@ class WarehouseManager {
             racks: { page: 1, itemsPerPage: 10 },
             placements: { page: 1, itemsPerPage: 10 }
         };
+		// Auto-sync runtime state
+		this.syncInterval = null;
+		this.lastDataHash = null;
         this.init();
     }
 
@@ -24,6 +27,8 @@ class WarehouseManager {
         this.displayAllData();
         this.setCurrentDate();
         this.loadGoogleSheetsConfig();
+		this.setupSyncUIListeners();
+        this.restoreUserPrefs();
     }
 
     // Data Management
@@ -111,6 +116,68 @@ class WarehouseManager {
 
     getData() {
         return JSON.parse(localStorage.getItem('warehouse_data'));
+    }
+
+    setData(data) { localStorage.setItem('warehouse_data', JSON.stringify(data)); }
+
+    // User prefs (persist matricules and UI settings)
+    restoreUserPrefs() {
+        const prefs = JSON.parse(localStorage.getItem('user_prefs') || '{}');
+        if (prefs.receptionMatricule) {
+            const el = document.getElementById('reception-matricule');
+            if (el) el.value = prefs.receptionMatricule;
+        }
+        if (prefs.placementMatricule) {
+            const el = document.getElementById('magasinier-matricule');
+            if (el) el.value = prefs.placementMatricule;
+        }
+    }
+
+    saveUserPref(key, value) {
+        const prefs = JSON.parse(localStorage.getItem('user_prefs') || '{}');
+        prefs[key] = value;
+        localStorage.setItem('user_prefs', JSON.stringify(prefs));
+    }
+
+	// Find material from a scanned/typed value with multiple fallbacks
+	findMaterialByScanInput(inputValue) {
+		const data = this.getData();
+		if (!inputValue) return null;
+
+		const raw = String(inputValue).trim();
+		const valueLc = raw.toLowerCase();
+
+		// 1) Exact barcode match
+		let matches = data.materials.filter(m => (m.barcode || '').toLowerCase() === valueLc);
+		if (matches.length === 1) return matches[0];
+		if (matches.length > 1) return matches.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0];
+
+		// 2) Match by ID
+		matches = data.materials.filter(m => (m.id || '').toLowerCase() === valueLc);
+		if (matches.length) return matches.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0];
+
+		// 3) Match by Part Number or Serial Number
+		matches = data.materials.filter(m =>
+			(m.partNumber && m.partNumber.toLowerCase() === valueLc) ||
+			(m.serialNumber && m.serialNumber.toLowerCase() === valueLc)
+		);
+		if (matches.length) return matches.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0];
+
+		// 4) Combined patterns PN-SN or SN-PN
+		matches = data.materials.filter(m => {
+			const pn = (m.partNumber || '').toLowerCase();
+			const sn = (m.serialNumber || '').toLowerCase();
+			return valueLc === `${pn}-${sn}` || valueLc === `${sn}-${pn}`;
+		});
+		if (matches.length) return matches.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0];
+
+		// 5) Loose numeric match against Serial Number (common scanner entry)
+		if (/^\d{4,}$/.test(raw)) {
+			matches = data.materials.filter(m => (m.serialNumber || '').replace(/\s+/g,'') === raw);
+			if (matches.length) return matches.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0];
+		}
+
+		return null;
     }
 
     saveData(data) {
@@ -209,6 +276,64 @@ class WarehouseManager {
         }
     }
 
+	// Wire auto-sync UI controls
+	setupSyncUIListeners() {
+		const autoSyncToggle = document.getElementById('auto-sync-toggle');
+		const frequencySelect = document.getElementById('sync-frequency');
+		const webAppUrlInput = document.getElementById('web-app-url');
+		const sheetsUrlInput = document.getElementById('sheets-url');
+
+		if (autoSyncToggle) {
+			autoSyncToggle.addEventListener('change', (e) => {
+				this.configureAutoSync({
+					enabled: e.target.checked,
+					frequency: (frequencySelect && frequencySelect.value) || 'manual',
+					webAppUrl: webAppUrlInput ? webAppUrlInput.value : undefined
+				});
+			});
+		}
+
+		if (frequencySelect) {
+			frequencySelect.addEventListener('change', (e) => {
+				const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+				config.syncFrequency = e.target.value;
+				localStorage.setItem('google_sheets_config', JSON.stringify(config));
+				if (autoSyncToggle && autoSyncToggle.checked) {
+					this.setupAutoSync(e.target.value);
+				}
+			});
+		}
+
+		if (webAppUrlInput) {
+			webAppUrlInput.addEventListener('blur', (e) => {
+				const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+				config.webAppUrl = e.target.value;
+				localStorage.setItem('google_sheets_config', JSON.stringify(config));
+			});
+		}
+
+		if (sheetsUrlInput) {
+			sheetsUrlInput.addEventListener('blur', (e) => {
+				const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+				config.sheetsUrl = e.target.value;
+				localStorage.setItem('google_sheets_config', JSON.stringify(config));
+			});
+		}
+
+		// Auto Excel toggle
+		const autoExcelToggle = document.getElementById('auto-excel-toggle');
+		if (autoExcelToggle) {
+			autoExcelToggle.addEventListener('change', (e) => {
+				const prefs = JSON.parse(localStorage.getItem('user_prefs') || '{}');
+				prefs.autoExcel = !!e.target.checked;
+				localStorage.setItem('user_prefs', JSON.stringify(prefs));
+			});
+			// restore
+			const prefs = JSON.parse(localStorage.getItem('user_prefs') || '{}');
+			autoExcelToggle.checked = !!prefs.autoExcel;
+		}
+    }
+
     setCurrentDate() {
         const dateInput = document.getElementById('date-received');
         if (dateInput) {
@@ -266,6 +391,7 @@ class WarehouseManager {
         const materialTypeEl = document.getElementById('material-type');
         const descriptionEl = document.getElementById('description');
         const supplierEl = document.getElementById('supplier');
+        const receptionMatriculeEl = document.getElementById('reception-matricule');
         const dateReceivedEl = document.getElementById('date-received');
 
         if (!partNumberEl || !serialNumberEl) {
@@ -279,6 +405,7 @@ class WarehouseManager {
         const materialType = materialTypeEl ? this.sanitizeInput(materialTypeEl.value) : 'Electronic';
         const description = descriptionEl ? this.sanitizeInput(descriptionEl.value.trim()) : '';
         const supplier = supplierEl ? this.sanitizeInput(supplierEl.value.trim()) : '';
+        const receptionMatricule = receptionMatriculeEl ? this.sanitizeInput(receptionMatriculeEl.value.trim()) : '';
         const dateReceived = dateReceivedEl ? dateReceivedEl.value : new Date().toISOString().split('T')[0];
 
         // Enhanced validation
@@ -313,6 +440,7 @@ class WarehouseManager {
             type: materialType,
             description: description,
             supplier: supplier,
+            receptionMatricule: receptionMatricule,
             dateReceived: dateReceived,
             barcode: barcode,
             timestamp: new Date().toISOString(),
@@ -322,11 +450,15 @@ class WarehouseManager {
         data.materials.push(material);
         this.saveData(data);
 
+        // remember matricule
+        if (receptionMatricule) this.saveUserPref('receptionMatricule', receptionMatricule);
+
         // Add audit entry
         this.addAuditEntry('CREATE', 'MATERIAL', materialId, {
             partNumber: partNumber,
             serialNumber: serialNumber,
-            type: materialType
+            type: materialType,
+            receptionMatricule: receptionMatricule
         });
 
         this.generateMaterialBarcode(material);
@@ -408,6 +540,7 @@ class WarehouseManager {
             code: rackCode,
             description: rackDescription,
             barcode: rackCode,
+            capacityNote: '',
             timestamp: new Date().toISOString(),
             createdBy: this.currentUser
         };
@@ -480,11 +613,10 @@ class WarehouseManager {
             return;
         }
 
-        const data = this.getData();
-        const material = data.materials.find(mat => mat.barcode === barcode);
+        const material = this.findMaterialByScanInput(barcode);
         
         if (!material) {
-            this.showNotification('Material not found', 'error');
+            this.showNotification('Material not found. Tip: scan the printed barcode or enter ID, P/N, or S/N.', 'error');
             return;
         }
 
@@ -525,10 +657,15 @@ class WarehouseManager {
         }
 
         const data = this.getData();
-        const rack = data.racks.find(r => r.barcode === barcode);
+        const valueLc = barcode.toLowerCase();
+        let rack = data.racks.find(r => (r.barcode || '').toLowerCase() === valueLc);
+        if (!rack) {
+            // fallback: match by code
+            rack = data.racks.find(r => (r.code || '').toLowerCase() === valueLc);
+        }
         
         if (!rack) {
-            this.showNotification('Rack location not found', 'error');
+            this.showNotification('Rack location not found. Tip: enter rack code (e.g., A-01-01).', 'error');
             return;
         }
 
@@ -564,6 +701,17 @@ class WarehouseManager {
 
     confirmPlacement() {
         const data = this.getData();
+        const matriculeInput = document.getElementById('magasinier-matricule');
+        const matricule = matriculeInput ? this.sanitizeInput(matriculeInput.value.trim()) : '';
+
+        if (!matricule) {
+            this.showNotification('Please enter your Magasinier Matricule', 'error');
+            if (matriculeInput) matriculeInput.focus();
+            return;
+        }
+
+        // remember matricule
+        this.saveUserPref('placementMatricule', matricule);
         const placementId = this.generateId('PLACE');
         
         const placement = {
@@ -574,6 +722,7 @@ class WarehouseManager {
             rackBarcode: this.currentPlacement.rack.barcode,
             timestamp: new Date().toISOString(),
             user: this.currentUser,
+            magasinierMatricule: matricule,
             createdBy: this.currentUser
         };
 
@@ -585,7 +734,8 @@ class WarehouseManager {
             materialId: this.currentPlacement.material.id,
             rackId: this.currentPlacement.rack.id,
             materialBarcode: this.currentPlacement.material.barcode,
-            rackBarcode: this.currentPlacement.rack.barcode
+            rackBarcode: this.currentPlacement.rack.barcode,
+            magasinierMatricule: matricule
         });
 
         this.showNotification('Placement recorded successfully', 'success');
@@ -598,11 +748,13 @@ class WarehouseManager {
         
         const materialBarcodeInput = document.getElementById('material-barcode-input');
         const rackBarcodeInput = document.getElementById('rack-barcode-input');
+        const matriculeInput = document.getElementById('magasinier-matricule');
         const selectedMaterialDisplay = document.getElementById('selected-material-display');
         const placementConfirmation = document.getElementById('placement-confirmation');
         
         if (materialBarcodeInput) materialBarcodeInput.value = '';
         if (rackBarcodeInput) rackBarcodeInput.value = '';
+        if (matriculeInput) matriculeInput.value = '';
         if (selectedMaterialDisplay) selectedMaterialDisplay.innerHTML = '';
         if (placementConfirmation) placementConfirmation.innerHTML = '';
         
@@ -664,6 +816,7 @@ class WarehouseManager {
                         <div class="item-detail"><strong>ID:</strong> ${material.id}</div>
                         <div class="item-detail"><strong>Supplier:</strong> ${this.escapeHtml(material.supplier || 'N/A')}</div>
                         <div class="item-detail"><strong>Barcode:</strong> ${material.barcode}</div>
+                        ${material.receptionMatricule ? `<div class="item-detail"><strong>Matricule:</strong> ${this.escapeHtml(material.receptionMatricule)}</div>` : ''}
                         <div class="item-detail"><strong>Created By:</strong> ${this.escapeHtml(material.createdBy || 'Unknown')}</div>
                     </div>
                     ${material.description ? `<div class="item-detail"><strong>Description:</strong> ${this.escapeHtml(material.description)}</div>` : ''}
@@ -708,6 +861,7 @@ class WarehouseManager {
                         <div class="item-detail"><strong>Row:</strong> ${this.escapeHtml(rack.row)}</div>
                         <div class="item-detail"><strong>Level:</strong> ${this.escapeHtml(rack.level)}</div>
                         <div class="item-detail"><strong>ID:</strong> ${rack.id}</div>
+                        ${rack.capacityNote ? `<div class="item-detail"><strong>Capacity:</strong> ${this.escapeHtml(rack.capacityNote)}</div>` : ''}
                         <div class="item-detail"><strong>Created By:</strong> ${this.escapeHtml(rack.createdBy || 'Unknown')}</div>
                     </div>
                     ${rack.description ? `<div class="item-detail"><strong>Description:</strong> ${this.escapeHtml(rack.description)}</div>` : ''}
@@ -756,6 +910,7 @@ class WarehouseManager {
                             <div class="item-detail"><strong>Material:</strong> ${material ? `${this.escapeHtml(material.partNumber)} (${this.escapeHtml(material.serialNumber)})` : 'N/A'}</div>
                             <div class="item-detail"><strong>Location:</strong> ${rack ? this.escapeHtml(rack.code) : 'N/A'}</div>
                             <div class="item-detail"><strong>User:</strong> ${this.escapeHtml(placement.user)}</div>
+                            ${placement.magasinierMatricule ? `<div class="item-detail"><strong>Matricule:</strong> ${this.escapeHtml(placement.magasinierMatricule)}</div>` : ''}
                             <div class="item-detail"><strong>Created By:</strong> ${this.escapeHtml(placement.createdBy || 'Unknown')}</div>
                         </div>
                     </div>
@@ -763,6 +918,22 @@ class WarehouseManager {
             }).join('')}
             ${this.renderPaginationControls('placements', page, totalPages)}
         `;
+    }
+
+    // Undo last placement (simple rollback)
+    undoLastPlacement() {
+        const data = this.getData();
+        if (!data.placements || data.placements.length === 0) {
+            this.showNotification('No placements to undo', 'info');
+            return;
+        }
+        const last = data.placements[data.placements.length - 1];
+        if (!confirm(`Undo last placement ${last.id}?`)) return;
+        data.placements.pop();
+        this.saveData(data);
+        this.addAuditEntry('DELETE', 'PLACEMENT', last.id, { reason: 'User undo last placement' });
+        this.showNotification('Last placement removed', 'success');
+        this.displayPlacements();
     }
 
     displayDataTables() {
@@ -900,6 +1071,49 @@ class WarehouseManager {
         const csvContent = JSON.stringify(data, null, 2);
         this.downloadFile(csvContent, 'warehouse_data.json', 'application/json');
         this.showNotification('All data exported successfully', 'success');
+    }
+
+    // Excel export: builds worksheets for materials, racks, placements, audit
+    exportAllToExcel() {
+        try {
+            const data = this.getData();
+            const wb = XLSX.utils.book_new();
+
+            const matCols = ['id','partNumber','serialNumber','type','description','supplier','receptionMatricule','dateReceived','barcode','createdBy','timestamp'];
+            const rackCols = ['id','zone','row','level','code','description','capacityNote','barcode','createdBy','timestamp'];
+            const plcCols = ['id','materialId','rackId','materialBarcode','rackBarcode','user','magasinierMatricule','createdBy','timestamp'];
+            const audCols = ['id','timestamp','user','action','entityType','entityId','details'];
+
+            const mats = data.materials.map(m => matCols.reduce((o,k)=>{o[k]=m[k]||'';return o;},{}));
+            const racks = data.racks.map(r => rackCols.reduce((o,k)=>{o[k]=r[k]||'';return o;},{}));
+            const plcs = data.placements.map(p => plcCols.reduce((o,k)=>{o[k]=typeof p[k]==='object'?JSON.stringify(p[k]):(p[k]||'');return o;},{}));
+            const audits = (data.auditLog||[]).map(a => audCols.reduce((o,k)=>{o[k]=typeof a[k]==='object'?JSON.stringify(a[k]):(a[k]||'');return o;},{}));
+
+            const ws1 = XLSX.utils.json_to_sheet(mats, { header: matCols });
+            const ws2 = XLSX.utils.json_to_sheet(racks, { header: rackCols });
+            const ws3 = XLSX.utils.json_to_sheet(plcs, { header: plcCols });
+            const ws4 = XLSX.utils.json_to_sheet(audits, { header: audCols });
+
+            XLSX.utils.book_append_sheet(wb, ws1, 'Materials');
+            XLSX.utils.book_append_sheet(wb, ws2, 'Racks');
+            XLSX.utils.book_append_sheet(wb, ws3, 'Placements');
+            XLSX.utils.book_append_sheet(wb, ws4, 'Audit');
+
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `warehouse_${new Date().toISOString().split('T')[0]}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this.showNotification('Excel exported successfully', 'success');
+        } catch (err) {
+            console.error('Excel export error', err);
+            this.showNotification('Failed to export Excel', 'error');
+        }
     }
 
     downloadCSV(content, filename) {
@@ -1251,42 +1465,34 @@ class WarehouseManager {
     async startCamera(type) {
         try {
             const video = document.getElementById('scanner-video');
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: 'environment' // Use back camera if available
-                } 
-            });
-            
+            this.scannerType = type;
+            // Prefer back camera
+            const constraints = { video: { facingMode: { ideal: 'environment' } } };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = stream;
             this.currentStream = stream;
-            this.scannerType = type;
 
-            // Simulate barcode detection (in a real implementation, you'd use a barcode scanning library)
-            this.simulateBarcodeDetection(type);
-            
-        } catch (error) {
-            this.showNotification('Error accessing camera: ' + error.message, 'error');
-            this.closeBarcodeScanner();
-        }
-    }
-
-    simulateBarcodeDetection(type) {
-        // This is a simulation - in a real app, you'd integrate with a barcode scanning library
-        // like QuaggaJS, ZXing, or similar
-        setTimeout(() => {
-            const simulatedBarcode = type === 'material' ? 'MAT001-TEST-001' : 'A-01-01';
-            
-            if (confirm(`Barcode detected: ${simulatedBarcode}\nUse this barcode?`)) {
+            if (window.ZXing && ZXing.BrowserMultiFormatReader) {
+                const codeReader = new ZXing.BrowserMultiFormatReader();
+                this.codeReader = codeReader;
+                await codeReader.decodeFromVideoDevice(null, 'scanner-video', (result, err) => {
+                    if (result && result.getText) {
+                        const text = result.getText();
                 const inputId = type === 'material' ? 'material-barcode-input' : 'rack-barcode-input';
                 const input = document.getElementById(inputId);
-                if (input) {
-                    input.value = simulatedBarcode;
+                        if (input) input.value = text;
+                        this.showNotification('Barcode scanned successfully', 'success');
+                        this.closeBarcodeScanner();
                 }
-                this.closeBarcodeScanner();
-                this.showNotification('Barcode scanned successfully', 'success');
+                });
             }
-        }, 3000); // Simulate 3 second scan time
+        } catch (error) {
+            this.showNotification('Error accessing camera: ' + error.message, 'error');
+                this.closeBarcodeScanner();
+            }
     }
+
+    // ZXing replaces the previous simulated detection
 
     closeBarcodeScanner() {
         const modal = document.querySelector('.scanner-modal');
@@ -1309,19 +1515,24 @@ class WarehouseManager {
     loadGoogleSheetsConfig() {
         const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
         
-        if (config.connected && config.sheetsUrl) {
             const sheetsUrlInput = document.getElementById('sheets-url');
             const syncFrequencySelect = document.getElementById('sync-frequency');
+		const webAppUrlInput = document.getElementById('web-app-url');
+		const autoSyncToggle = document.getElementById('auto-sync-toggle');
             
-            if (sheetsUrlInput) sheetsUrlInput.value = config.sheetsUrl;
+		if (sheetsUrlInput && config.sheetsUrl) sheetsUrlInput.value = config.sheetsUrl;
+		if (webAppUrlInput && config.webAppUrl) webAppUrlInput.value = config.webAppUrl;
             if (syncFrequencySelect) syncFrequencySelect.value = config.syncFrequency || 'manual';
+		if (autoSyncToggle) autoSyncToggle.checked = !!config.autoSync;
             
             // Setup auto-sync if enabled
+		if (config.autoSync && config.syncFrequency) {
             this.setupAutoSync(config.syncFrequency);
-            
-            // Show connection status
-            this.showNotification('Google Sheets configuration loaded', 'info');
-        }
+		}
+
+		// Initialize sync status UI
+		const lastSyncStr = config.lastSync ? new Date(config.lastSync) : null;
+		this.updateSyncStatus(config.lastSyncStatus || 'info', lastSyncStr || new Date(0));
     }
 
     // Google Sheets Integration
@@ -1354,8 +1565,11 @@ class WarehouseManager {
 
         localStorage.setItem('google_sheets_config', JSON.stringify(config));
         
-        // Setup auto-sync if enabled
+		// Respect auto-sync toggle
+		const autoSyncToggle = document.getElementById('auto-sync-toggle');
+		if (autoSyncToggle && autoSyncToggle.checked) {
         this.setupAutoSync(syncFrequency);
+		}
         
         this.showNotification('Connected to Google Sheets successfully', 'success');
         
@@ -1374,6 +1588,11 @@ class WarehouseManager {
         if (frequency === 'realtime') {
             // Sync on every data change (already handled in saveData method)
             this.autoSyncEnabled = true;
+			this.syncInterval = null;
+		} else if (frequency === 'minute') {
+			this.syncInterval = setInterval(() => {
+				this.syncWithGoogleSheets();
+			}, 60 * 1000);
         } else if (frequency === 'hourly') {
             this.syncInterval = setInterval(() => {
                 this.syncWithGoogleSheets();
@@ -1382,6 +1601,10 @@ class WarehouseManager {
             this.syncInterval = setInterval(() => {
                 this.syncWithGoogleSheets();
             }, 24 * 60 * 60 * 1000); // 24 hours
+		} else {
+			// manual
+			this.autoSyncEnabled = false;
+			this.syncInterval = null;
         }
     }
 
@@ -1394,33 +1617,75 @@ class WarehouseManager {
         }
 
         this.showNotification('Syncing with Google Sheets...', 'info');
+		this.updateSyncStatus('syncing', new Date());
         
         try {
             const data = this.getData();
             
-            // Create CSV data for each sheet
-            const materialsCSV = this.createCSVData('materials', data.materials);
-            const racksCSV = this.createCSVData('racks', data.racks);
-            const placementsCSV = this.createCSVData('placements', data.placements);
-
-            // Send data to Google Sheets using Google Apps Script Web App
-            const success = await this.sendToGoogleSheets(config.sheetId, {
-                materials: materialsCSV,
-                racks: racksCSV,
-                placements: placementsCSV
-            });
+			// Change detection: skip if unchanged
+			const currentHash = this.generateDataHash(data);
+			if (config.lastDataHash && config.lastDataHash === currentHash && config.syncFrequency !== 'realtime') {
+				this.showNotification('No changes detected since last sync', 'info');
+				this.updateSyncStatus('success', new Date());
+				return;
+			}
+            
+			let success = false;
+			// If a Web App URL is configured, use it (most reliable)
+			if (config.webAppUrl) {
+				const payload = {
+					action: 'updateSheets',
+					data: {
+						materials: this.createCSVData('materials', data.materials),
+						racks: this.createCSVData('racks', data.racks),
+						placements: this.createCSVData('placements', data.placements),
+						summary: [
+							['Metric', 'Value', 'Last Updated'],
+							['Total Materials', data.materials.length, new Date().toLocaleString()],
+							['Total Racks', data.racks.length, new Date().toLocaleString()],
+							['Total Placements', data.placements.length, new Date().toLocaleString()],
+							['Last Sync', new Date().toISOString(), new Date().toLocaleString()]
+						]
+					}
+				};
+				try {
+					await fetch(config.webAppUrl, {
+						method: 'POST',
+						mode: 'no-cors',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(payload)
+					});
+					success = true; // assume success in no-cors
+				} catch (err) {
+					success = false;
+				}
+			} else {
+				// Fallback to current direct helper (opens instruction window)
+				success = await this.sendToGoogleSheets(config.sheetId, {
+					materials: this.createCSVData('materials', data.materials),
+					racks: this.createCSVData('racks', data.racks),
+					placements: this.createCSVData('placements', data.placements)
+				});
+			}
 
             if (success) {
-                // Update last sync time
+				// Update sync stats
                 config.lastSync = new Date().toISOString();
+				config.lastDataHash = currentHash;
+				config.syncCount = (config.syncCount || 0) + 1;
+				config.lastSyncStatus = 'success';
                 localStorage.setItem('google_sheets_config', JSON.stringify(config));
-                
+				this.updateSyncStatus('success', new Date());
                 this.showNotification('Data synced to Google Sheets successfully', 'success');
             } else {
+				config.lastSyncStatus = 'error';
+				localStorage.setItem('google_sheets_config', JSON.stringify(config));
+				this.updateSyncStatus('error', new Date());
                 this.showNotification('Failed to sync with Google Sheets. Please check your sheet permissions.', 'error');
             }
         } catch (error) {
             console.error('Google Sheets sync error:', error);
+			this.updateSyncStatus('error', new Date());
             this.showNotification('Error syncing with Google Sheets: ' + error.message, 'error');
         }
     }
@@ -1570,8 +1835,16 @@ class WarehouseManager {
                 });
             }
 
-            // Open enhanced Google Sheets integration window
+            // Respect quiet mode: do not open window if webAppUrl or quiet flag is set
+            if (config.webAppUrl || config.quietSync) {
+                return false; // skip opening helper window
+            }
+
+            // Open enhanced Google Sheets integration window (manual helper)
             const instructionsWindow = window.open('', '_blank');
+            if (!instructionsWindow) {
+                return false;
+            }
             instructionsWindow.document.write(`
                 <html>
                     <head>
@@ -1883,12 +2156,21 @@ class WarehouseManager {
         this.updateStats();
         this.displayAllData();
 
-        // Auto-sync if real-time sync is enabled
+        // Auto-sync if real-time sync is enabled — only when Web App URL is configured
         const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
-        if (config.connected && config.syncFrequency === 'realtime') {
+        if (config.connected && config.syncFrequency === 'realtime' && config.webAppUrl) {
             setTimeout(() => {
                 this.syncWithGoogleSheets();
             }, 1000); // Delay to avoid too frequent syncs
+        }
+
+        // Optional: Auto export to Excel (rate-limited)
+        const prefs = JSON.parse(localStorage.getItem('user_prefs') || '{}');
+        if (prefs.autoExcel && window.XLSX) {
+            clearTimeout(this._excelTimer);
+            this._excelTimer = setTimeout(() => {
+                try { this.exportAllToExcel(); } catch (_) {}
+            }, 1500);
         }
     }
 
@@ -1919,6 +2201,72 @@ class WarehouseManager {
                 </div>
             `).join('');
     }
+
+	// Compute a simple hash of the current data to detect changes between syncs
+	generateDataHash(data) {
+		const signature = JSON.stringify({
+			materialsCount: data.materials.length,
+			racksCount: data.racks.length,
+			placementsCount: data.placements.length,
+			lastMaterial: data.materials[data.materials.length - 1]?.timestamp || null,
+			lastRack: data.racks[data.racks.length - 1]?.timestamp || null,
+			lastPlacement: data.placements[data.placements.length - 1]?.timestamp || null
+		});
+		let hash = 0;
+		for (let i = 0; i < signature.length; i++) {
+			hash = ((hash << 5) - hash) + signature.charCodeAt(i);
+			hash |= 0;
+		}
+		return hash.toString();
+	}
+
+	// Update sync status UI elements if present
+	updateSyncStatus(status, timestamp) {
+		const indicator = document.getElementById('sync-indicator');
+		const statusEl = document.getElementById('sync-status');
+		const lastSyncEl = document.getElementById('last-sync-time');
+
+		if (indicator) {
+			indicator.className = `sync-indicator sync-indicator--${status}`;
+			indicator.textContent = status === 'success' ? '✅ Synced' : status === 'syncing' ? '🔄 Syncing...' : status === 'error' ? '❌ Error' : '⚪ Not Connected';
+		}
+		if (statusEl) {
+			statusEl.textContent = status === 'success' ? '✅ Synced' : status === 'syncing' ? '🔄 Syncing' : status === 'error' ? '❌ Error' : 'Disconnected';
+			statusEl.className = `status ${status === 'success' ? 'status--success' : status === 'error' ? 'status--error' : 'status--info'}`;
+		}
+		if (lastSyncEl && timestamp) {
+			lastSyncEl.textContent = `Last sync: ${timestamp.toLocaleString()}`;
+		}
+	}
+
+	// Configure automatic sync behavior
+	configureAutoSync(settings) {
+		const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+		config.autoSync = !!settings.enabled;
+		if (settings.frequency) config.syncFrequency = settings.frequency;
+		if (settings.webAppUrl) config.webAppUrl = settings.webAppUrl;
+		localStorage.setItem('google_sheets_config', JSON.stringify(config));
+
+		if (config.autoSync) {
+			this.setupAutoSync(config.syncFrequency || 'manual');
+			this.showNotification('Automatic sync enabled', 'success');
+		} else {
+			if (this.syncInterval) clearInterval(this.syncInterval);
+			this.syncInterval = null;
+			this.showNotification('Automatic sync disabled', 'info');
+		}
+	}
+
+	getSyncStats() {
+		const config = JSON.parse(localStorage.getItem('google_sheets_config') || '{}');
+		return {
+			enabled: !!config.autoSync,
+			frequency: config.syncFrequency || 'manual',
+			lastSync: config.lastSync ? new Date(config.lastSync) : null,
+			syncCount: config.syncCount || 0,
+			status: config.lastSyncStatus || 'info'
+		};
+    }
 }
 
 // Initialize the application
@@ -1933,6 +2281,13 @@ window.configureAutoSync = function(settings) {
 
 window.getSyncStats = function() {
     return warehouseManager ? warehouseManager.getSyncStats() : null;
+};
+
+// Quick undo handler
+window.undoLastPlacement = function() {
+    if (warehouseManager) {
+        warehouseManager.undoLastPlacement();
+    }
 };
 
 window.showAutoSyncSetup = function() {
@@ -2075,6 +2430,243 @@ window.exportToGoogleSheets = function() {
     }
 };
 
+window.exportAllToExcel = function() {
+    if (warehouseManager) {
+        warehouseManager.exportAllToExcel();
+    }
+};
+
+// Microsoft Graph upload (OneDrive/SharePoint) — requires app registration
+window.uploadExcelToOneDrive = async function() {
+    try {
+        if (!window.XLSX) { alert('Excel library not loaded'); return; }
+
+        // 1) Create workbook in-memory (reuse exporter)
+        const data = warehouseManager.getData();
+        const wb = XLSX.utils.book_new();
+        const matCols = ['id','partNumber','serialNumber','type','description','supplier','receptionMatricule','dateReceived','barcode','createdBy','timestamp'];
+        const rackCols = ['id','zone','row','level','code','description','capacityNote','barcode','createdBy','timestamp'];
+        const plcCols = ['id','materialId','rackId','materialBarcode','rackBarcode','user','magasinierMatricule','createdBy','timestamp'];
+        const audCols = ['id','timestamp','user','action','entityType','entityId','details'];
+        const mats = data.materials.map(m => matCols.reduce((o,k)=>{o[k]=m[k]||'';return o;},{}));
+        const racks = data.racks.map(r => rackCols.reduce((o,k)=>{o[k]=r[k]||'';return o;},{}));
+        const plcs = data.placements.map(p => plcCols.reduce((o,k)=>{o[k]=typeof p[k]==='object'?JSON.stringify(p[k]):(p[k]||'');return o;},{}));
+        const audits = (data.auditLog||[]).map(a => audCols.reduce((o,k)=>{o[k]=typeof a[k]==='object'?JSON.stringify(a[k]):(a[k]||'');return o;},{}));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mats, { header: matCols }), 'Materials');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(racks, { header: rackCols }), 'Racks');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(plcs, { header: plcCols }), 'Placements');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(audits, { header: audCols }), 'Audit');
+        const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
+        // 2) Authenticate with MSAL (Public Client)
+        const msalConfig = {
+            auth: {
+                clientId: 'YOUR_AZURE_AD_APP_CLIENT_ID', // Replace with your actual client ID
+                authority: 'https://login.microsoftonline.com/consumers', // For personal Microsoft accounts
+                redirectUri: window.location.origin
+            }
+        };
+        const msalInstance = new msal.PublicClientApplication(msalConfig);
+        
+        try {
+            const loginResp = await msalInstance.loginPopup({ 
+                scopes: ['Files.ReadWrite.All', 'offline_access'],
+                prompt: 'select_account'
+            });
+            const account = loginResp.account;
+            const tokenResp = await msalInstance.acquireTokenSilent({ 
+                scopes: ['Files.ReadWrite.All'], 
+                account 
+            }).catch(() => msalInstance.acquireTokenPopup({ 
+                scopes: ['Files.ReadWrite.All'] 
+            }));
+            const token = tokenResp.accessToken;
+
+        // 3) Upload to OneDrive root (or your SharePoint drive)
+        const fileName = `warehouse_${new Date().toISOString().replace(/[:.]/g,'-')}.xlsx`;
+        const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(fileName)}:/content`;
+        const resp = await fetch(uploadUrl, { 
+            method: 'PUT', 
+            headers: { 
+                'Authorization': `Bearer ${token}`, 
+                'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+            }, 
+            body: wbout 
+        });
+
+        if (!resp.ok) { throw new Error('Upload failed: ' + resp.status); }
+        alert('Uploaded to OneDrive: ' + fileName);
+        } catch (err) {
+            console.error(err);
+            alert('OneDrive upload failed. Configure Azure AD client ID and try again.');
+        }
+    } catch (err) {
+        console.error(err);
+        alert('OneDrive upload failed. Configure Azure AD client ID and try again.');
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     warehouseManager = new WarehouseManager();
+    // Register service worker for PWA/offline
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
 });
+
+// Global search: Enter key triggers a cross-entity filter
+window.globalSearchEnter = function(e) {
+    if (e && e.key === 'Enter') {
+        const val = e.target.value || '';
+        if (warehouseManager) {
+            warehouseManager.setSearchFilter('materials', val);
+            warehouseManager.setSearchFilter('racks', val);
+            warehouseManager.setSearchFilter('placements', val);
+        }
+    }
+};
+
+// Bulk reception: simple paste JSON/CSV scaffold
+window.openBulkReception = function() {
+    const hint = 'Paste JSON array of materials (partNumber, serialNumber, type, supplier, description, dateReceived, receptionMatricule).';
+    const input = prompt(hint + '\nExample: [{"partNumber":"PN-1","serialNumber":"SN-1"}]');
+    if (!input) return;
+    try {
+        const arr = JSON.parse(input);
+        if (!Array.isArray(arr)) throw new Error('Invalid data');
+        const data = warehouseManager.getData();
+        const now = new Date().toISOString();
+        arr.forEach(item => {
+            const pn = warehouseManager.sanitizeInput(String(item.partNumber||'').trim());
+            const sn = warehouseManager.sanitizeInput(String(item.serialNumber||'').trim());
+            if (!pn || !sn) return;
+            const id = warehouseManager.generateId('MAT');
+            const barcode = `${id}-${pn}-${sn}`;
+            data.materials.push({
+                id,
+                partNumber: pn,
+                serialNumber: sn,
+                type: String(item.type||'Electronic'),
+                description: String(item.description||''),
+                supplier: String(item.supplier||''),
+                receptionMatricule: String(item.receptionMatricule||''),
+                dateReceived: String(item.dateReceived||new Date().toISOString().split('T')[0]),
+                barcode,
+                timestamp: now,
+                createdBy: warehouseManager.currentUser
+            });
+        });
+        warehouseManager.saveData(data);
+        alert('Bulk reception completed.');
+    } catch (err) {
+        alert('Invalid JSON. Please try again.');
+    }
+};
+
+// Modal-based bulk reception with CSV/JSON parsing
+window.openBulkReceptionModal = function() {
+    const modal = document.getElementById('bulk-modal');
+    if (modal) modal.style.display = 'flex';
+};
+
+window.closeBulkReceptionModal = function() {
+    const modal = document.getElementById('bulk-modal');
+    if (modal) modal.style.display = 'none';
+    const file = document.getElementById('bulk-file');
+    const text = document.getElementById('bulk-text');
+    if (file) file.value = '';
+    if (text) text.value = '';
+};
+
+function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+    if (lines.length === 0) return [];
+    const headers = lines[0].split(',').map(h => h.trim());
+    return lines.slice(1).map(line => {
+        const cols = line.split(',');
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = (cols[i] || '').trim(); });
+        return obj;
+    });
+}
+
+function toArray(input) {
+    if (!input) return [];
+    const trimmed = input.trim();
+    if (!trimmed) return [];
+    try {
+        const asJson = JSON.parse(trimmed);
+        return Array.isArray(asJson) ? asJson : [];
+    } catch (_) {
+        // Try CSV
+        return parseCSV(trimmed);
+    }
+}
+
+window.importBulkReception = function() {
+    const fileEl = document.getElementById('bulk-file');
+    const textEl = document.getElementById('bulk-text');
+
+    const process = (rows) => {
+        if (!rows || rows.length === 0) { alert('No rows found.'); return; }
+        const data = warehouseManager.getData();
+        let added = 0;
+        rows.forEach(item => {
+            const pn = warehouseManager.sanitizeInput(String(item.partNumber||'').trim());
+            const sn = warehouseManager.sanitizeInput(String(item.serialNumber||'').trim());
+            if (!pn || !sn) return;
+
+            // Skip duplicates PN+SN
+            const exists = data.materials.some(m => m.partNumber === pn && m.serialNumber === sn);
+            if (exists) return;
+
+            const id = warehouseManager.generateId('MAT');
+            const barcode = `${id}-${pn}-${sn}`;
+            data.materials.push({
+                id,
+                partNumber: pn,
+                serialNumber: sn,
+                type: String(item.type||'Electronic'),
+                description: String(item.description||''),
+                supplier: String(item.supplier||''),
+                receptionMatricule: String(item.receptionMatricule||''),
+                dateReceived: String(item.dateReceived||new Date().toISOString().split('T')[0]),
+                barcode,
+                timestamp: new Date().toISOString(),
+                createdBy: warehouseManager.currentUser
+            });
+            added++;
+        });
+        warehouseManager.saveData(data);
+        alert(`Imported ${added} materials.`);
+        closeBulkReceptionModal();
+    };
+
+    if (fileEl && fileEl.files && fileEl.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const rows = parseCSV(e.target.result || '');
+            process(rows);
+        };
+        reader.readAsText(fileEl.files[0]);
+        return;
+    }
+
+    const rows = toArray(textEl ? textEl.value : '');
+    process(rows);
+};
+
+// Prompt to set capacity note for a rack by code
+window.promptRackCapacity = function() {
+    const code = prompt('Enter rack code to set capacity note (e.g., A-01-01)');
+    if (!code) return;
+    const note = prompt('Enter capacity note for ' + code + ' (e.g., Max 20 items / Bulky only)');
+    if (note === null) return;
+    const data = warehouseManager.getData();
+    const rack = data.racks.find(r => (r.code||'').toLowerCase() === code.toLowerCase());
+    if (!rack) { alert('Rack not found'); return; }
+    rack.capacityNote = note;
+    warehouseManager.saveData(data);
+    warehouseManager.addAuditEntry('UPDATE', 'RACK', rack.id, { capacityNote: note });
+    alert('Capacity note saved for ' + rack.code);
+};

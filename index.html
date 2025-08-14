@@ -2,10 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#C40434">
+    <link rel="manifest" href="manifest.webmanifest">
     <title>Aviation Warehouse Management System</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <!-- ZXing for real barcode scanning (mobile friendly) -->
+    <script src="https://unpkg.com/@zxing/library@0.20.0"></script>
+    <!-- SheetJS for Excel (XLSX) export -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- MSAL for Microsoft Graph authentication (OneDrive/SharePoint upload) -->
+    <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -27,8 +35,13 @@
                         <span class="stat-label">Placements</span>
                     </div>
                 </div>
+                <div class="global-search" style="margin-top: 12px; max-width: 520px;">
+                    <input type="text" class="form-control" id="global-search-input" placeholder="Search all: materials, racks, placements… (press Enter)" onkeydown="globalSearchEnter(event)">
+                </div>
             </div>
         </header>
+
+        
 
         <!-- Main Dashboard -->
         <main class="main-content">
@@ -116,11 +129,16 @@
                                     <input type="text" id="supplier" name="supplier" class="form-control">
                                 </div>
                                 <div class="form-group">
+                                    <label class="form-label" for="reception-matricule">Magasinier Matricule</label>
+                                    <input type="text" id="reception-matricule" name="reception-matricule" class="form-control" placeholder="Enter employee ID" autocomplete="off">
+                                </div>
+                                <div class="form-group">
                                     <label class="form-label" for="date-received">Date Received</label>
                                     <input type="date" id="date-received" name="date-received" class="form-control">
                                 </div>
                                 <div class="form-actions">
                                     <button type="submit" class="btn btn--primary">Generate Material Barcode</button>
+                                    <button type="button" class="btn btn--secondary" onclick="openBulkReceptionModal()">Bulk Reception</button>
                                     <button type="button" class="btn btn--secondary" onclick="clearForm('material-form')">Clear Form</button>
                                 </div>
                             </form>
@@ -213,6 +231,7 @@
                                 <div class="form-actions">
                                     <button type="submit" class="btn btn--primary">Generate Rack Barcode</button>
                                     <button type="button" class="btn btn--secondary" onclick="clearForm('rack-form')">Clear Form</button>
+                                    <button type="button" class="btn btn--outline" onclick="promptRackCapacity()">Set Capacity Note</button>
                                 </div>
                             </form>
                         </div>
@@ -293,6 +312,11 @@
                         <div class="placement-step" id="placement-step-3">
                             <h3>Step 3: Confirm Placement</h3>
                             <div class="placement-confirmation" id="placement-confirmation"></div>
+            <div class="form-group">
+                <label class="form-label" for="magasinier-matricule">Magasinier Matricule</label>
+                <input type="text" id="magasinier-matricule" name="magasinier-matricule" class="form-control" placeholder="Enter your employee ID" autocomplete="off">
+                <small class="form-help">Required to confirm placement</small>
+            </div>
                             <div class="form-actions">
                                 <button class="btn btn--primary" onclick="confirmPlacement()">Confirm Placement</button>
                                 <button class="btn btn--secondary" onclick="resetPlacement()">Cancel</button>
@@ -306,6 +330,7 @@
                             <div class="search-controls">
                                 <input type="text" id="placements-search" class="form-control" placeholder="Search placements..." onkeyup="warehouseManager.setSearchFilter('placements', this.value)">
                                 <button class="btn btn--secondary" onclick="document.getElementById('placements-search').value=''; warehouseManager.setSearchFilter('placements', '');">Clear</button>
+                                <button class="btn btn--outline" onclick="undoLastPlacement()" title="Remove the most recent placement">Undo last placement</button>
                             </div>
                         </div>
                         <div id="placements-display"></div>
@@ -324,7 +349,17 @@
                             <button class="btn btn--primary" onclick="exportToCSV('placements')">Export Placements to CSV</button>
                             <button class="btn btn--primary" onclick="exportAllData()">Export All Data to JSON</button>
                             <button class="btn btn--primary" onclick="exportToGoogleSheets()">📊 Export to Google Sheets</button>
+                            <button class="btn btn--secondary" onclick="exportAllToExcel()">📗 Export All to Excel</button>
                         </div>
+
+                            <div class="form-group" style="margin-top:12px;">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="auto-excel-toggle" name="auto-excel-toggle">
+                                    <span class="checkmark"></span>
+                                    Enable Auto Export to Excel (on changes)
+                                </label>
+                                <small class="form-help">When enabled, a new Excel file will download automatically after changes (rate-limited).</small>
+                            </div>
                         
                         <div class="google-sheets-section">
                             <h4>🔄 Automatic Google Sheets Integration</h4>
@@ -377,6 +412,7 @@
                                 <button class="btn btn--primary" onclick="connectGoogleSheets()">🔗 Connect to Google Sheets</button>
                                 <button class="btn btn--secondary" onclick="syncWithGoogleSheets()">🔄 Sync Now</button>
                                 <button class="btn btn--outline" onclick="showAutoSyncSetup()">📖 Setup Guide</button>
+                                <button class="btn btn--outline" onclick="uploadExcelToOneDrive()">☁️ Upload Excel to OneDrive</button>
                             </div>
                             
                             <!-- Sync Statistics -->
@@ -447,6 +483,29 @@
             </div>
         </main>
 
+        <!-- Bulk Reception Modal (reuses scanner modal styles) -->
+        <div id="bulk-modal" class="scanner-modal" style="display:none;">
+            <div class="scanner-content" style="max-width:720px; width:95%;">
+                <h3>Bulk Reception</h3>
+                <p style="font-size: 12px; color: var(--color-text-secondary); margin-top: 8px;">
+                    Import multiple materials at once by uploading a CSV or pasting JSON/CSV.
+                </p>
+                <div style="text-align:left; margin-top: 12px;">
+                    <label class="form-label" for="bulk-file">Upload CSV</label>
+                    <input type="file" id="bulk-file" class="form-control" accept=".csv" />
+                    <small class="form-help">CSV headers: partNumber, serialNumber, type, supplier, description, dateReceived, receptionMatricule</small>
+                </div>
+                <div style="text-align:left; margin-top: 16px;">
+                    <label class="form-label" for="bulk-text">Or paste JSON/CSV</label>
+                    <textarea id="bulk-text" class="form-control" rows="6" placeholder='Example JSON: [{"partNumber":"PN-1","serialNumber":"SN-1"}]'></textarea>
+                </div>
+                <div class="scanner-actions">
+                    <button class="btn btn--primary" onclick="importBulkReception()">Import</button>
+                    <button class="btn btn--secondary" onclick="closeBulkReceptionModal()">Close</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Notification System -->
         <div id="notification" class="notification hidden">
             <div class="notification-content">
@@ -457,5 +516,11 @@
     </div>
 
     <script src="app.js"></script>
+    <script>
+      // Register service worker and attach manifest dynamically if missing icons
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js').catch(() => {});
+      }
+    </script>
 </body>
 </html>

@@ -1,9 +1,147 @@
+/* === Brand Red & White Overrides (non-breaking) === */
+:root {
+  /* Core palette */
+  --color-background: #FFFFFF;
+  --color-surface: #FFFFFF;
+  --color-text: #1E1E1E;
+  --color-text-secondary: rgba(30,30,30,0.70);
+
+  --color-primary: #C40434;
+  --color-primary-hover: #A9032C;
+  --color-primary-active: #8A0225;
+
+  /* Replace gold accents with subtle crimson washes */
+  --color-secondary: rgba(196, 4, 52, 0.06);
+  --color-secondary-hover: rgba(196, 4, 52, 0.10);
+  --color-secondary-active: rgba(196, 4, 52, 0.14);
+
+  --color-border: #E9E9EC;
+  --color-card-border: #EEEEF2;
+  --color-card-border-inner: rgba(0,0,0,0.06);
+  --color-btn-primary-text: #FFFFFF;
+
+  --color-focus-ring: rgba(196, 4, 52, 0.35);
+
+  /* Section/table tints (crimson-focused) */
+  --color-bg-1: rgba(196, 4, 52, 0.08);
+  --color-bg-2: rgba(196, 4, 52, 0.06);
+  --color-bg-3: rgba(196, 4, 52, 0.05);
+  --color-bg-4: rgba(215, 38, 61, 0.08);
+  --color-bg-5: rgba(196, 4, 52, 0.04);
+  --color-bg-6: #FAFAFA;
+  --color-bg-7: rgba(196, 4, 52, 0.06);
+  --color-bg-8: rgba(44, 44, 44, 0.05);
+
+  /* States (distinct from brand) */
+  --color-error: #D7263D;
+  --color-success: #1C8F72;
+  --color-warning: #E19D3A;
+  --color-info: #6B6B6B;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 6px 16px rgba(0,0,0,0.08);
+  --shadow-lg: 0 12px 28px rgba(0,0,0,0.10);
+}
+
+/* Force light visuals even when OS prefers dark */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #FFFFFF;
+    --color-surface: #FFFFFF;
+    --color-text: #1E1E1E;
+    --color-text-secondary: rgba(30,30,30,0.70);
+    --color-primary: #C40434;
+    --color-primary-hover: #A9032C;
+    --color-primary-active: #8A0225;
+    --color-secondary: rgba(196,4,52,0.06);
+    --color-secondary-hover: rgba(196,4,52,0.10);
+    --color-secondary-active: rgba(196,4,52,0.14);
+    --color-border: #E9E9EC;
+    --color-card-border: #EEEEF2;
+    --color-card-border-inner: rgba(0,0,0,0.06);
+    --color-btn-primary-text: #FFFFFF;
+    --color-focus-ring: rgba(196,4,52,0.35);
+    --color-bg-1: rgba(196, 4, 52, 0.08);
+    --color-bg-2: rgba(196, 4, 52, 0.06);
+    --color-bg-3: rgba(196, 4, 52, 0.05);
+    --color-bg-4: rgba(215, 38, 61, 0.08);
+    --color-bg-5: rgba(196, 4, 52, 0.04);
+    --color-bg-6: #FAFAFA;
+    --color-bg-7: rgba(196, 4, 52, 0.06);
+    --color-bg-8: rgba(44, 44, 44, 0.05);
+    --color-error: #D7263D;
+    --color-success: #1C8F72;
+    --color-warning: #E19D3A;
+    --color-info: #6B6B6B;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+    --shadow-md: 0 6px 16px rgba(0,0,0,0.08);
+    --shadow-lg: 0 12px 28px rgba(0,0,0,0.10);
+  }
+}
+
+/* Components: red & white visuals (no layout changes) */
+.btn--primary {
+  background: var(--color-primary);
+  color: var(--color-btn-primary-text);
+  border: 1px solid var(--color-primary);
+}
+.btn--primary:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+.btn--primary:active { background: var(--color-primary-active); border-color: var(--color-primary-active); }
+
+.btn--secondary {
+  background: var(--color-secondary);
+  color: var(--color-text);
+  border: 1px solid rgba(196,4,52,0.35);
+}
+.btn--secondary:hover { background: var(--color-secondary-hover); }
+
+.btn--outline {
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid rgba(196,4,52,0.65);
+}
+.btn--outline:hover { background: rgba(196,4,52,0.08); }
+
+.tab-button.active {
+  color: var(--color-primary);
+  background: var(--color-bg-1);
+  border-bottom-color: var(--color-primary);
+}
+
+.card { background: var(--color-surface); border: 1px solid var(--color-card-border); box-shadow: var(--shadow-sm); }
+
+.data-table { background: var(--color-surface); border: 1px solid var(--color-card-border); }
+.data-table th { background: var(--color-bg-2); color: var(--color-text); border-bottom: 1px solid var(--color-card-border); }
+.data-table td { color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border); }
+
+/* Ensure red/white tokens also apply when data-color-scheme="dark" is set */
+[data-color-scheme="dark"] {
+  --color-primary: #C40434;
+  --color-primary-hover: #A9032C;
+  --color-primary-active: #8A0225;
+
+  --color-secondary: rgba(196, 4, 52, 0.06);
+  --color-secondary-hover: rgba(196, 4, 52, 0.10);
+  --color-secondary-active: rgba(196, 4, 52, 0.14);
+
+  --color-bg-1: rgba(196, 4, 52, 0.08);
+  --color-bg-2: rgba(196, 4, 52, 0.06);
+  --color-bg-3: rgba(196, 4, 52, 0.05);
+  --color-bg-4: rgba(215, 38, 61, 0.08);
+  --color-bg-5: rgba(196, 4, 52, 0.04);
+  --color-bg-6: #1E1E1E; /* keep section contrast on dark */
+  --color-bg-7: rgba(196, 4, 52, 0.06);
+  --color-bg-8: rgba(255,255,255,0.06);
+}
+/* (Brand system injection removed per user request) */
+
 :root {
   /* Primitive Color Tokens */
   --color-white: rgba(255, 255, 255, 1);
   --color-black: rgba(0, 0, 0, 1);
-  --color-cream-50: rgba(252, 252, 249, 1);
-  --color-cream-100: rgba(255, 255, 253, 1);
+  --color-cream-50: #fdf8f8;
+  --color-cream-100: #fffafa;
   --color-gray-200: rgba(245, 245, 245, 1);
   --color-gray-300: rgba(167, 169, 169, 1);
   --color-gray-400: rgba(119, 124, 124, 1);
@@ -12,20 +150,20 @@
   --color-charcoal-700: rgba(31, 33, 33, 1);
   --color-charcoal-800: rgba(38, 40, 40, 1);
   --color-slate-900: rgba(19, 52, 59, 1);
-  --color-teal-300: rgba(50, 184, 198, 1);
-  --color-teal-400: rgba(45, 166, 178, 1);
-  --color-teal-500: rgba(33, 128, 141, 1);
-  --color-teal-600: rgba(29, 116, 128, 1);
-  --color-teal-700: rgba(26, 104, 115, 1);
-  --color-teal-800: rgba(41, 150, 161, 1);
+  --color-teal-300: #f0c987; /* repurposed as gold accent */
+  --color-teal-400: #e6b65c;
+  --color-teal-500: #C2002F; /* Royal Air Maroc red */
+  --color-teal-600: #A00028;
+  --color-teal-700: #800021;
+  --color-teal-800: #C2002F;
   --color-red-400: rgba(255, 84, 89, 1);
-  --color-red-500: rgba(192, 21, 47, 1);
+  --color-red-500: #b00020;
   --color-orange-400: rgba(230, 129, 97, 1);
   --color-orange-500: rgba(168, 75, 47, 1);
 
   /* RGB versions for opacity control */
   --color-brown-600-rgb: 94, 82, 64;
-  --color-teal-500-rgb: 33, 128, 141;
+  --color-teal-500-rgb: 194, 0, 47;
   --color-slate-900-rgb: 19, 52, 59;
   --color-slate-500-rgb: 98, 108, 113;
   --color-red-500-rgb: 192, 21, 47;
@@ -34,14 +172,14 @@
   --color-orange-400-rgb: 230, 129, 97;
 
   /* Background color tokens (Light Mode) */
-  --color-bg-1: rgba(59, 130, 246, 0.08); /* Light blue */
-  --color-bg-2: rgba(245, 158, 11, 0.08); /* Light yellow */
-  --color-bg-3: rgba(34, 197, 94, 0.08); /* Light green */
-  --color-bg-4: rgba(239, 68, 68, 0.08); /* Light red */
-  --color-bg-5: rgba(147, 51, 234, 0.08); /* Light purple */
-  --color-bg-6: rgba(249, 115, 22, 0.08); /* Light orange */
-  --color-bg-7: rgba(236, 72, 153, 0.08); /* Light pink */
-  --color-bg-8: rgba(6, 182, 212, 0.08); /* Light cyan */
+  --color-bg-1: rgba(176, 0, 32, 0.08);
+  --color-bg-2: rgba(217, 164, 65, 0.12);
+  --color-bg-3: rgba(176, 0, 32, 0.06);
+  --color-bg-4: rgba(176, 0, 32, 0.12);
+  --color-bg-5: rgba(217, 164, 65, 0.08);
+  --color-bg-6: rgba(217, 164, 65, 0.12);
+  --color-bg-7: rgba(176, 0, 32, 0.1);
+  --color-bg-8: rgba(217, 164, 65, 0.1);
 
   /* Semantic Color Tokens (Light Mode) */
   --color-background: var(--color-cream-50);
@@ -55,12 +193,12 @@
   --color-secondary-hover: rgba(var(--color-brown-600-rgb), 0.2);
   --color-secondary-active: rgba(var(--color-brown-600-rgb), 0.25);
   --color-border: rgba(var(--color-brown-600-rgb), 0.2);
-  --color-btn-primary-text: var(--color-cream-50);
+  --color-btn-primary-text: #fff8f2;
   --color-card-border: rgba(var(--color-brown-600-rgb), 0.12);
   --color-card-border-inner: rgba(var(--color-brown-600-rgb), 0.12);
   --color-error: var(--color-red-500);
-  --color-success: var(--color-teal-500);
-  --color-warning: var(--color-orange-500);
+  --color-success: #2aa198;
+  --color-warning: var(--color-teal-400);
   --color-info: var(--color-slate-500);
   --color-focus-ring: rgba(var(--color-teal-500-rgb), 0.4);
   --color-select-caret: rgba(var(--color-slate-900-rgb), 0.8);
@@ -228,15 +366,15 @@
   --color-surface: var(--color-charcoal-800);
   --color-text: var(--color-gray-200);
   --color-text-secondary: rgba(var(--color-gray-300-rgb), 0.7);
-  --color-primary: var(--color-teal-300);
-  --color-primary-hover: var(--color-teal-400);
-  --color-primary-active: var(--color-teal-800);
+  --color-primary: #f0c987;
+  --color-primary-hover: #e6b65c;
+  --color-primary-active: #d9a441;
   --color-secondary: rgba(var(--color-gray-400-rgb), 0.15);
   --color-secondary-hover: rgba(var(--color-gray-400-rgb), 0.25);
   --color-secondary-active: rgba(var(--color-gray-400-rgb), 0.3);
   --color-border: rgba(var(--color-gray-400-rgb), 0.3);
-  --color-error: var(--color-red-400);
-  --color-success: var(--color-teal-300);
+  --color-error: #ff6b6b;
+  --color-success: #a8dadc;
   --color-warning: var(--color-orange-400);
   --color-info: var(--color-gray-300);
   --color-focus-ring: rgba(var(--color-teal-300-rgb), 0.4);
@@ -588,13 +726,9 @@ select.form-control {
 }
 
 .status--warning {
-  background-color: rgba(
-    var(--color-warning-rgb, 168, 75, 47),
-    var(--status-bg-opacity)
-  );
-  color: var(--color-warning);
-  border: 1px solid
-    rgba(var(--color-warning-rgb, 168, 75, 47), var(--status-border-opacity));
+  background-color: rgba(225, 157, 58, 0.12);
+  color: #E19D3A;
+  border: 1px solid rgba(225, 157, 58, 0.28);
 }
 
 .status--info {
@@ -747,14 +881,22 @@ select.form-control {
 }
 
 .app-header {
-  background-color: var(--color-bg-1);
-  border-bottom: 1px solid var(--color-border);
+  /* Background image with subtle dark overlay for readability */
+  background:
+    linear-gradient(0deg, rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
+    url('assets/header-hero.jpg'); /* Replace with your image path */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
   padding: var(--space-20) 0;
 }
 
+.topbar { display: none; }
+
 .app-header h1 {
   margin: 0;
-  color: var(--color-text);
+  color: #FFFFFF;
   font-size: var(--font-size-3xl);
   font-weight: var(--font-weight-bold);
 }
@@ -763,6 +905,12 @@ select.form-control {
   display: flex;
   gap: var(--space-32);
   margin-top: var(--space-16);
+}
+
+.brand-logo {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
 }
 
 .stat-item {
@@ -775,12 +923,12 @@ select.form-control {
 .stat-value {
   font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
-  color: var(--color-primary);
+  color: #FFFFFF;
 }
 
 .stat-label {
   font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+  color: rgba(255,255,255,0.85);
   margin-top: var(--space-4);
 }
 
@@ -817,7 +965,7 @@ select.form-control {
 .tab-button.active {
   color: var(--color-primary);
   border-bottom-color: var(--color-primary);
-  background-color: var(--color-bg-1);
+  background-image: linear-gradient(90deg, rgba(176,0,32,0.06), rgba(217,164,65,0.08));
 }
 
 /* Tab Content */
@@ -856,6 +1004,7 @@ select.form-control {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: var(--color-primary);
+  outline: 1px solid rgba(176,0,32,0.15);
 }
 
 .card-icon {
@@ -895,7 +1044,7 @@ select.form-control {
 }
 
 .barcode-section {
-  background-color: var(--color-bg-2);
+  background-color: var(--color-bg-1);
   border: 1px solid var(--color-card-border);
   border-radius: var(--radius-lg);
   padding: var(--space-24);
@@ -1335,7 +1484,7 @@ select.form-control {
 
 /* Google Sheets Integration Styles */
 .google-sheets-section {
-    background-color: var(--color-bg-2);
+    background-color: var(--color-bg-1);
     border: 1px solid var(--color-card-border);
     border-radius: var(--radius-lg);
     padding: var(--space-24);
@@ -1381,8 +1530,8 @@ select.form-control {
 
 .scanner-video {
     width: 100%;
-    max-width: 400px;
-    height: 300px;
+    max-width: 480px;
+    height: 320px;
     border-radius: var(--radius-base);
     background-color: var(--color-secondary);
     margin: var(--space-16) 0;
@@ -1403,7 +1552,7 @@ select.form-control {
     gap: var(--space-16);
     margin: var(--space-16) 0;
     padding: var(--space-12);
-    background-color: var(--color-bg-3);
+    background-color: var(--color-bg-1);
     border-radius: var(--radius-base);
 }
 
@@ -1496,6 +1645,9 @@ select.form-control {
         flex-direction: column;
     }
 
+    /* Buttons full width on small screens for easier tapping */
+    .btn { width: 100%; }
+
     .barcode-actions {
         flex-direction: column;
     }
@@ -1507,7 +1659,7 @@ select.form-control {
 
     .camera-btn {
         width: 100%;
-        height: 40px;
+        height: 48px;
     }
 
     .google-sheets-section .form-actions {
@@ -1551,6 +1703,10 @@ select.form-control {
   .barcode-section {
     padding: var(--space-16);
   }
+
+  /* Very small devices: tighter tabs and steps */
+  .tab-button { padding: 10px 12px; }
+  .step-number { width: 32px; height: 32px; }
 
   .notification {
     top: var(--space-12);
