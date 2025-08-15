@@ -477,11 +477,11 @@ class WarehouseManager {
         try {
             JsBarcode(canvas, material.barcode, {
                 format: "CODE128",
-                width: 2,
-                height: 100,
+                width: 3,
+                height: 120,
                 displayValue: true,
-                fontSize: 14,
-                margin: 10
+                fontSize: 16,
+                margin: 16
             });
 
             const barcodeInfo = document.getElementById('material-barcode-info');
@@ -572,11 +572,11 @@ class WarehouseManager {
         try {
             JsBarcode(canvas, rack.barcode, {
                 format: "CODE128",
-                width: 2,
-                height: 100,
+                width: 3,
+                height: 120,
                 displayValue: true,
-                fontSize: 14,
-                margin: 10
+                fontSize: 16,
+                margin: 16
             });
 
             const barcodeInfo = document.getElementById('rack-barcode-info');
@@ -1445,51 +1445,104 @@ class WarehouseManager {
         modal.innerHTML = `
             <div class="scanner-content">
                 <h3>Scan ${type === 'material' ? 'Material' : 'Rack'} Barcode</h3>
-                <video id="scanner-video" class="scanner-video" autoplay></video>
+                <video id="scanner-video" class="scanner-video" autoplay playsinline></video>
                 <div class="scanner-actions">
-                    <button class="btn btn--primary" onclick="closeBarcodeScanner()">Close Scanner</button>
+                    <button class="btn btn--primary" onclick="closeBarcodeScanner()">Close</button>
                     <button class="btn btn--secondary" onclick="switchCamera()">Switch Camera</button>
+                    <button class="btn btn--secondary" onclick="toggleTorch()">Toggle Torch</button>
+                    <label class="btn btn--secondary" style="margin-bottom:0;">
+                        From Photo
+                        <input id="scanner-image-input" type="file" accept="image/*" capture="environment" style="display:none;" />
+                    </label>
                 </div>
                 <p style="font-size: 12px; color: var(--color-text-secondary); margin-top: 16px;">
-                    Position the barcode within the camera view. The scanner will automatically detect and input the code.
+                    Tips: Good light, fill the frame, hold steady. Printed label should be at least 4–5 cm wide with a blank margin around it.
                 </p>
             </div>
         `;
 
         document.body.appendChild(modal);
 
+        // Hook image input for decoding from photo
+        const imgInput = modal.querySelector('#scanner-image-input');
+        if (imgInput) {
+            imgInput.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (file) this.decodeFromImageFile(file, type);
+            });
+        }
+
         // Start camera
         this.startCamera(type);
     }
 
-    async startCamera(type) {
+    async startCamera(type, deviceId = null) {
         try {
             const video = document.getElementById('scanner-video');
             this.scannerType = type;
-            // Prefer back camera
-            const constraints = { video: { facingMode: { ideal: 'environment' } } };
+            const constraints = {
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: deviceId ? undefined : { ideal: 'environment' },
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    advanced: [ { focusMode: 'continuous' } ]
+                }
+            };
+
+            if (this.currentStream) {
+                this.currentStream.getTracks().forEach(t => t.stop());
+                this.currentStream = null;
+            }
+
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = stream;
             this.currentStream = stream;
 
+            await this.listCameras();
+            if (deviceId) this.currentCameraDeviceId = deviceId;
+
             if (window.ZXing && ZXing.BrowserMultiFormatReader) {
                 const codeReader = new ZXing.BrowserMultiFormatReader();
+                try {
+                    const formats = [
+                        ZXing.BarcodeFormat.CODE_128,
+                        ZXing.BarcodeFormat.CODE_39,
+                        ZXing.BarcodeFormat.EAN_13,
+                        ZXing.BarcodeFormat.EAN_8,
+                        ZXing.BarcodeFormat.ITF
+                    ];
+                    codeReader.hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+                } catch(_) {}
                 this.codeReader = codeReader;
-                await codeReader.decodeFromVideoDevice(null, 'scanner-video', (result, err) => {
+
+                await codeReader.decodeFromVideoDevice(deviceId || null, 'scanner-video', (result, err) => {
                     if (result && result.getText) {
                         const text = result.getText();
-                const inputId = type === 'material' ? 'material-barcode-input' : 'rack-barcode-input';
-                const input = document.getElementById(inputId);
+                        const inputId = type === 'material' ? 'material-barcode-input' : 'rack-barcode-input';
+                        const input = document.getElementById(inputId);
                         if (input) input.value = text;
                         this.showNotification('Barcode scanned successfully', 'success');
                         this.closeBarcodeScanner();
-                }
+                    }
                 });
             }
         } catch (error) {
             this.showNotification('Error accessing camera: ' + error.message, 'error');
-                this.closeBarcodeScanner();
+            this.closeBarcodeScanner();
+        }
+    }
+
+    async listCameras() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            this.availableCameras = devices.filter(d => d.kind === 'videoinput');
+            if (this.availableCameras.length > 0 && this.currentCameraIndex == null) {
+                this.currentCameraIndex = 0;
             }
+        } catch(_) {
+            this.availableCameras = [];
+        }
     }
 
     // ZXing replaces the previous simulated detection
@@ -1502,13 +1555,58 @@ class WarehouseManager {
                 this.currentStream.getTracks().forEach(track => track.stop());
                 this.currentStream = null;
             }
+            if (this.codeReader && this.codeReader.reset) {
+                try { this.codeReader.reset(); } catch(_) {}
+            }
             modal.remove();
         }
     }
 
     switchCamera() {
-        // Implementation for switching between front/back camera
-        this.showNotification('Camera switching not implemented in demo', 'info');
+        if (!this.availableCameras || this.availableCameras.length < 2) {
+            this.showNotification('No alternate camera found', 'info');
+            return;
+        }
+        this.currentCameraIndex = (this.currentCameraIndex + 1) % this.availableCameras.length;
+        const next = this.availableCameras[this.currentCameraIndex];
+        this.startCamera(this.scannerType || 'material', next.deviceId);
+    }
+
+    async toggleTorch() {
+        try {
+            if (!this.currentStream) return;
+            const track = this.currentStream.getVideoTracks()[0];
+            const caps = track.getCapabilities ? track.getCapabilities() : {};
+            if (!('torch' in caps)) {
+                this.showNotification('Torch not supported on this device', 'info');
+                return;
+            }
+            this.torchOn = !this.torchOn;
+            await track.applyConstraints({ advanced: [{ torch: this.torchOn }] });
+        } catch(e) {
+            this.showNotification('Unable to toggle torch', 'error');
+        }
+    }
+
+    async decodeFromImageFile(file, type) {
+        try {
+            if (!(window.ZXing && ZXing.BrowserMultiFormatReader)) return;
+            const url = URL.createObjectURL(file);
+            const codeReader = new ZXing.BrowserMultiFormatReader();
+            const result = await codeReader.decodeFromImageUrl(url);
+            URL.revokeObjectURL(url);
+            if (result && result.getText) {
+                const inputId = type === 'material' ? 'material-barcode-input' : 'rack-barcode-input';
+                const input = document.getElementById(inputId);
+                if (input) input.value = result.getText();
+                this.showNotification('Barcode decoded from photo', 'success');
+                this.closeBarcodeScanner();
+            } else {
+                this.showNotification('No barcode found in photo', 'error');
+            }
+        } catch (e) {
+            this.showNotification('Failed to decode from photo', 'error');
+        }
     }
 
     // Load saved Google Sheets configuration on page load
