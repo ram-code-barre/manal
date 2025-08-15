@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database & Excel Export - Aviation Warehouse Management</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 5px solid #3498db;
+        }
+
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+        }
+
+        .section h2::before {
+            content: '';
+            width: 30px;
+            height: 3px;
+            background: #3498db;
+            margin-right: 15px;
+            border-radius: 2px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            border: 1px solid #e9ecef;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        .card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            font-weight: 500;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+
+        .export-options {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .export-options h4 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 10px;
+            width: auto;
+        }
+
+        .filters-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .filter-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 15px;
+            align-items: end;
+            margin-bottom: 15px;
+        }
+
+        .filter-row .btn {
+            margin-bottom: 0;
+        }
+
+        .log-section {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-section h4 {
+            margin-bottom: 15px;
+            color: #ecf0f1;
+        }
+
+        .log-entry {
+            padding: 8px 0;
+            border-bottom: 1px solid #34495e;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-timestamp {
+            color: #95a5a6;
+            margin-right: 10px;
+        }
+
+        .log-message {
+            color: #ecf0f1;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .filter-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛩️ Aviation Warehouse Management</h1>
+            <p>Database Management & Excel Export System</p>
+        </div>
+
+        <div class="content">
+            <!-- Database Status Section -->
+            <div class="section">
+                <h2>📊 Database Status</h2>
+                <div class="stats-grid" id="databaseStats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="materialsCount">-</div>
+                        <div class="stat-label">Materials</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="racksCount">-</div>
+                        <div class="stat-label">Racks</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="placementsCount">-</div>
+                        <div class="stat-label">Placements</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="auditCount">-</div>
+                        <div class="stat-label">Audit Logs</div>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="refreshStats()">
+                    <span class="loading hidden" id="statsLoading"></span>
+                    Refresh Statistics
+                </button>
+            </div>
+
+            <!-- Database Operations Section -->
+            <div class="section">
+                <h2>🗄️ Database Operations</h2>
+                <div class="grid">
+                    <div class="card">
+                        <h3>Add Material</h3>
+                        <form id="addMaterialForm">
+                            <div class="form-group">
+                                <label>Part Number</label>
+                                <input type="text" name="part_number" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Serial Number</label>
+                                <input type="text" name="serial_number">
+                            </div>
+                            <div class="form-group">
+                                <label>Type</label>
+                                <select name="type" required>
+                                    <option value="">Select Type</option>
+                                    <option value="Aircraft Part">Aircraft Part</option>
+                                    <option value="Engine Component">Engine Component</option>
+                                    <option value="Avionics">Avionics</option>
+                                    <option value="Landing Gear">Landing Gear</option>
+                                    <option value="Safety Equipment">Safety Equipment</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <textarea name="description" rows="3"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Quantity</label>
+                                <input type="number" name="quantity" min="0" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Unit</label>
+                                <select name="unit">
+                                    <option value="PCS">PCS</option>
+                                    <option value="SET">SET</option>
+                                    <option value="KG">KG</option>
+                                    <option value="L">L</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-success">Add Material</button>
+                        </form>
+                    </div>
+
+                    <div class="card">
+                        <h3>Add Rack</h3>
+                        <form id="addRackForm">
+                            <div class="form-group">
+                                <label>Rack Code</label>
+                                <input type="text" name="code" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Zone</label>
+                                <input type="text" name="zone" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Level</label>
+                                <input type="text" name="level">
+                            </div>
+                            <div class="form-group">
+                                <label>Capacity</label>
+                                <input type="number" name="capacity" min="0" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Security Level</label>
+                                <select name="security_level">
+                                    <option value="Low">Low</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="High">High</option>
+                                    <option value="Restricted">Restricted</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-success">Add Rack</button>
+                        </form>
+                    </div>
+
+                    <div class="card">
+                        <h3>Database Management</h3>
+                        <button class="btn btn-secondary" onclick="backupDatabase()">Backup Database</button>
+                        <button class="btn btn-warning" onclick="restoreDatabase()">Restore Database</button>
+                        <button class="btn btn-danger" onclick="clearDatabase()">Clear All Data</button>
+                        <button class="btn btn-secondary" onclick="loadSampleData()">Load Sample Data</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Excel Export Section -->
+            <div class="section">
+                <h2>📈 Excel Export</h2>
+                
+                <div class="export-options">
+                    <h4>Single Table Export</h4>
+                    <div class="grid">
+                        <button class="btn btn-success" onclick="exportTable('materials')">Export Materials</button>
+                        <button class="btn btn-success" onclick="exportTable('racks')">Export Racks</button>
+                        <button class="btn btn-success" onclick="exportTable('placements')">Export Placements</button>
+                        <button class="btn btn-success" onclick="exportTable('audit_log')">Export Audit Log</button>
+                    </div>
+                </div>
+
+                <div class="export-options">
+                    <h4>Report Export</h4>
+                    <div class="grid">
+                        <button class="btn btn-success" onclick="exportInventoryReport()">Inventory Report</button>
+                        <button class="btn btn-success" onclick="exportRackUtilizationReport()">Rack Utilization</button>
+                        <button class="btn btn-success" onclick="exportAuditTrailReport()">Audit Trail</button>
+                        <button class="btn btn-success" onclick="exportAllTables()">Export All Tables</button>
+                    </div>
+                </div>
+
+                <div class="filters-section">
+                    <h4>Filtered Export</h4>
+                    <div class="filter-row">
+                        <div class="form-group">
+                            <label>Table</label>
+                            <select id="filterTable">
+                                <option value="materials">Materials</option>
+                                <option value="racks">Racks</option>
+                                <option value="placements">Placements</option>
+                                <option value="audit_log">Audit Log</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Field</label>
+                            <select id="filterField">
+                                <option value="part_number">Part Number</option>
+                                <option value="type">Type</option>
+                                <option value="supplier">Supplier</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Value</label>
+                            <input type="text" id="filterValue" placeholder="Enter filter value">
+                        </div>
+                        <button class="btn btn-success" onclick="exportFilteredData()">Export Filtered</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Messages -->
+            <div id="statusMessages"></div>
+
+            <!-- Activity Log -->
+            <div class="section">
+                <h2>📝 Activity Log</h2>
+                <div class="log-section" id="activityLog">
+                    <h4>Recent Activities</h4>
+                    <div class="log-entry">
+                        <span class="log-timestamp">[System]</span>
+                        <span class="log-message">Database system initialized</span>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="clearLog()">Clear Log</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Input for Restore -->
+    <input type="file" id="restoreFileInput" accept=".json" style="display: none;" onchange="handleRestoreFile(event)">
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="database_manager.js"></script>
+    <script src="excel_exporter.js"></script>
+    <script src="database_excel_integration.js"></script>
+    <script>
+        // Global variables
+        let dbIntegration;
+        let isInitializing = false;
+
+        // Initialize the system
+        async function initializeSystem() {
+            if (isInitializing) return;
+            isInitializing = true;
+
+            try {
+                showStatus('Initializing database system...', 'info');
+                addLogEntry('Initializing database system...');
+
+                dbIntegration = new DatabaseExcelIntegration();
+                
+                // Wait for initialization
+                while (!dbIntegration.isReady()) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+
+                showStatus('System initialized successfully!', 'success');
+                addLogEntry('System initialized successfully!');
+
+                // Load initial statistics
+                await refreshStats();
+
+            } catch (error) {
+                showStatus(`Initialization failed: ${error.message}`, 'error');
+                addLogEntry(`Initialization failed: ${error.message}`);
+            } finally {
+                isInitializing = false;
+            }
+        }
+
+        // Show status message
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('statusMessages');
+            const statusElement = document.createElement('div');
+            statusElement.className = `status ${type}`;
+            statusElement.textContent = message;
+            
+            statusDiv.appendChild(statusElement);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (statusElement.parentNode) {
+                    statusElement.parentNode.removeChild(statusElement);
+                }
+            }, 5000);
+        }
+
+        // Add log entry
+        function addLogEntry(message) {
+            const logDiv = document.getElementById('activityLog');
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            
+            const timestamp = new Date().toLocaleTimeString();
+            logEntry.innerHTML = `
+                <span class="log-timestamp">[${timestamp}]</span>
+                <span class="log-message">${message}</span>
+            `;
+            
+            logDiv.appendChild(logEntry);
+            
+            // Keep only last 50 entries
+            const entries = logDiv.querySelectorAll('.log-entry');
+            if (entries.length > 50) {
+                entries[0].remove();
+            }
+        }
+
+        // Refresh database statistics
+        async function refreshStats() {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                const loadingElement = document.getElementById('statsLoading');
+                loadingElement.classList.remove('hidden');
+                
+                const stats = await dbIntegration.getDatabaseStats();
+                
+                document.getElementById('materialsCount').textContent = stats.materials.count;
+                document.getElementById('racksCount').textContent = stats.racks.count;
+                document.getElementById('placementsCount').textContent = stats.placements.count;
+                document.getElementById('auditCount').textContent = stats.audit_log.count;
+                
+                addLogEntry('Statistics refreshed');
+                
+            } catch (error) {
+                showStatus(`Failed to refresh stats: ${error.message}`, 'error');
+                addLogEntry(`Failed to refresh stats: ${error.message}`);
+            } finally {
+                document.getElementById('statsLoading').classList.add('hidden');
+            }
+        }
+
+        // Form handlers
+        document.getElementById('addMaterialForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                const formData = new FormData(e.target);
+                const materialData = Object.fromEntries(formData.entries());
+                
+                // Convert quantity to number
+                materialData.quantity = parseInt(materialData.quantity);
+                
+                await dbIntegration.addMaterialWithExport(materialData, { exportAfterAdd: false });
+                
+                showStatus('Material added successfully!', 'success');
+                addLogEntry(`Material added: ${materialData.part_number}`);
+                
+                // Refresh stats and clear form
+                await refreshStats();
+                e.target.reset();
+                
+            } catch (error) {
+                showStatus(`Failed to add material: ${error.message}`, 'error');
+                addLogEntry(`Failed to add material: ${error.message}`);
+            }
+        });
+
+        document.getElementById('addRackForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                const formData = new FormData(e.target);
+                const rackData = Object.fromEntries(formData.entries());
+                
+                // Convert capacity to number
+                rackData.capacity = parseInt(rackData.capacity);
+                
+                await dbIntegration.addRackWithExport(rackData, { exportAfterAdd: false });
+                
+                showStatus('Rack added successfully!', 'success');
+                addLogEntry(`Rack added: ${rackData.code}`);
+                
+                // Refresh stats and clear form
+                await refreshStats();
+                e.target.reset();
+                
+            } catch (error) {
+                showStatus(`Failed to add rack: ${error.message}`, 'error');
+                addLogEntry(`Failed to add rack: ${error.message}`);
+            }
+        });
+
+        // Export functions
+        async function exportTable(tableName) {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus(`Exporting ${tableName}...`, 'info');
+                addLogEntry(`Starting export of ${tableName}`);
+                
+                await dbIntegration.exportTable(tableName, {
+                    user: dbIntegration.getCurrentUser()
+                });
+                
+                showStatus(`${tableName} exported successfully!`, 'success');
+                addLogEntry(`${tableName} exported successfully`);
+                
+            } catch (error) {
+                showStatus(`Export failed: ${error.message}`, 'error');
+                addLogEntry(`Export failed: ${error.message}`);
+            }
+        }
+
+        async function exportInventoryReport() {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Exporting inventory report...', 'info');
+                addLogEntry('Starting inventory report export');
+                
+                await dbIntegration.exportInventoryReport({}, {
+                    user: dbIntegration.getCurrentUser()
+                });
+                
+                showStatus('Inventory report exported successfully!', 'success');
+                addLogEntry('Inventory report exported successfully');
+                
+            } catch (error) {
+                showStatus(`Export failed: ${error.message}`, 'error');
+                addLogEntry(`Export failed: ${error.message}`);
+            }
+        }
+
+        async function exportRackUtilizationReport() {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Exporting rack utilization report...', 'info');
+                addLogEntry('Starting rack utilization report export');
+                
+                await dbIntegration.exportRackUtilizationReport({}, {
+                    user: dbIntegration.getCurrentUser()
+                });
+                
+                showStatus('Rack utilization report exported successfully!', 'success');
+                addLogEntry('Rack utilization report exported successfully');
+                
+            } catch (error) {
+                showStatus(`Export failed: ${error.message}`, 'error');
+                addLogEntry(`Export failed: ${error.message}`);
+            }
+        }
+
+        async function exportAuditTrailReport() {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Exporting audit trail report...', 'info');
+                addLogEntry('Starting audit trail report export');
+                
+                await dbIntegration.exportAuditTrailReport({}, {
+                    user: dbIntegration.getCurrentUser()
+                });
+                
+                showStatus('Audit trail report exported successfully!', 'success');
+                addLogEntry('Audit trail report exported successfully');
+                
+            } catch (error) {
+                showStatus(`Export failed: ${error.message}`, 'error');
+                addLogEntry(`Export failed: ${error.message}`);
+            }
+        }
+
+        async function exportAllTables() {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Exporting all tables...', 'info');
+                addLogEntry('Starting export of all tables');
+                
+                await dbIntegration.exportAllTables({
+                    user: dbIntegration.getCurrentUser()
+                });
+                
+                showStatus('All tables exported successfully!', 'success');
+                addLogEntry('All tables exported successfully');
+                
+            } catch (error) {
+                showStatus(`Export failed: ${error.message}`, 'error');
+                addLogEntry(`Export failed: ${error.message}`);
+            }
+        }
+
+        async function exportFilteredData() {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            const tableName = document.getElementById('filterTable').value;
+            const field = document.getElementById('filterField').value;
+            const value = document.getElementById('filterValue').value;
+
+            if (!value.trim()) {
+                showStatus('Please enter a filter value', 'error');
+                return;
+            }
+
+            try {
+                showStatus(`Exporting filtered ${tableName}...`, 'info');
+                addLogEntry(`Starting filtered export of ${tableName}`);
+                
+                const filters = { [field]: value };
+                await dbIntegration.exportFilteredData(tableName, filters, {
+                    user: dbIntegration.getCurrentUser()
+                });
+                
+                showStatus(`Filtered ${tableName} exported successfully!`, 'success');
+                addLogEntry(`Filtered ${tableName} exported successfully`);
+                
+            } catch (error) {
+                showStatus(`Export failed: ${error.message}`, 'error');
+                addLogEntry(`Export failed: ${error.message}`);
+            }
+        }
+
+        // Database management functions
+        async function backupDatabase() {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Creating database backup...', 'info');
+                addLogEntry('Starting database backup');
+                
+                const backup = await dbIntegration.backupDatabase();
+                
+                // Create download link
+                const dataStr = JSON.stringify(backup, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(dataBlob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `warehouse_backup_${new Date().toISOString().split('T')[0]}.json`;
+                link.click();
+                URL.revokeObjectURL(url);
+                
+                showStatus('Database backup created successfully!', 'success');
+                addLogEntry('Database backup created successfully');
+                
+            } catch (error) {
+                showStatus(`Backup failed: ${error.message}`, 'error');
+                addLogEntry(`Backup failed: ${error.message}`);
+            }
+        }
+
+        function restoreDatabase() {
+            document.getElementById('restoreFileInput').click();
+        }
+
+        async function handleRestoreFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Restoring database...', 'info');
+                addLogEntry('Starting database restore');
+                
+                const fileContent = await file.text();
+                const backupData = JSON.parse(fileContent);
+                
+                await dbIntegration.restoreDatabase(backupData);
+                
+                showStatus('Database restored successfully!', 'success');
+                addLogEntry('Database restored successfully');
+                
+                // Refresh stats
+                await refreshStats();
+                
+            } catch (error) {
+                showStatus(`Restore failed: ${error.message}`, 'error');
+                addLogEntry(`Restore failed: ${error.message}`);
+            }
+        }
+
+        async function clearDatabase() {
+            if (!confirm('Are you sure you want to clear all data? This action cannot be undone!')) {
+                return;
+            }
+
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Clearing database...', 'info');
+                addLogEntry('Starting database clear');
+                
+                // Clear all tables
+                const tables = ['materials', 'racks', 'placements', 'audit_log', 'users', 'suppliers', 'material_movements', 'maintenance_records', 'certifications'];
+                
+                for (const table of tables) {
+                    await dbIntegration.databaseManager.executeQuery(`DELETE FROM ${table}`);
+                }
+                
+                showStatus('Database cleared successfully!', 'success');
+                addLogEntry('Database cleared successfully');
+                
+                // Refresh stats
+                await refreshStats();
+                
+            } catch (error) {
+                showStatus(`Clear failed: ${error.message}`, 'error');
+                addLogEntry(`Clear failed: ${error.message}`);
+            }
+        }
+
+        async function loadSampleData() {
+            if (!dbIntegration || !dbIntegration.isReady()) {
+                showStatus('System not ready', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Loading sample data...', 'info');
+                addLogEntry('Starting sample data load');
+                
+                await dbIntegration.loadSampleDataIfNeeded();
+                
+                showStatus('Sample data loaded successfully!', 'success');
+                addLogEntry('Sample data loaded successfully');
+                
+                // Refresh stats
+                await refreshStats();
+                
+            } catch (error) {
+                showStatus(`Sample data load failed: ${error.message}`, 'error');
+                addLogEntry(`Sample data load failed: ${error.message}`);
+            }
+        }
+
+        function clearLog() {
+            const logDiv = document.getElementById('activityLog');
+            const entries = logDiv.querySelectorAll('.log-entry');
+            entries.forEach(entry => entry.remove());
+            
+            // Add initial entry
+            addLogEntry('Log cleared');
+        }
+
+        // Update filter field options based on selected table
+        document.getElementById('filterTable').addEventListener('change', function() {
+            const tableName = this.value;
+            const filterField = document.getElementById('filterField');
+            
+            // Clear current options
+            filterField.innerHTML = '';
+            
+            // Add appropriate fields based on table
+            const fieldOptions = {
+                materials: ['part_number', 'type', 'supplier', 'condition_status', 'location'],
+                racks: ['code', 'zone', 'status', 'security_level'],
+                placements: ['material_id', 'rack_id', 'status'],
+                audit_log: ['action', 'entity_type', 'user_id']
+            };
+            
+            const fields = fieldOptions[tableName] || [];
+            fields.forEach(field => {
+                const option = document.createElement('option');
+                option.value = field;
+                option.textContent = field.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                filterField.appendChild(option);
+            });
+        });
+
+        // Initialize system when page loads
+        document.addEventListener('DOMContentLoaded', initializeSystem);
+    </script>
+</body>
+</html>
