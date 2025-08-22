@@ -22,6 +22,7 @@ class WarehouseManager {
 
     init() {
         this.initializeData();
+        this.migrateExistingRacks(); // Migrate existing racks to new format
         this.setupEventListeners();
         this.updateStats();
         this.displayAllData();
@@ -41,6 +42,67 @@ class WarehouseManager {
                 auditLog: []
             };
             localStorage.setItem('warehouse_data', JSON.stringify(initialData));
+        }
+    }
+
+    // Migrate existing racks to new format (Zone = "R", Row = numeric, Column = alphabetic, Sub-level = numeric)
+    migrateExistingRacks() {
+        const data = this.getData();
+        let hasChanges = false;
+
+        data.racks.forEach(rack => {
+            let needsUpdate = false;
+            
+            // Update zone to "R" if it's not already
+            if (rack.zone !== 'R') {
+                rack.zone = 'R';
+                needsUpdate = true;
+            }
+            
+            // Ensure row is numeric (1-26)
+            if (rack.row && !/^\d+$/.test(rack.row)) {
+                // Convert alphabetic row to numeric if needed
+                const rowChar = rack.row.toUpperCase();
+                if (/^[A-Z]$/.test(rowChar)) {
+                    rack.row = (rowChar.charCodeAt(0) - 64).toString(); // Convert A->1, B->2, etc.
+                    needsUpdate = true;
+                }
+            }
+            
+            // Ensure level is alphabetic (A-Z) - this becomes the column
+            if (rack.level && /^\d+$/.test(rack.level)) {
+                // Convert numeric level to alphabetic if needed
+                const levelNum = parseInt(rack.level);
+                if (levelNum >= 1 && levelNum <= 26) {
+                    rack.level = String.fromCharCode(64 + levelNum); // Convert 1->A, 2->B, etc.
+                    needsUpdate = true;
+                }
+            }
+            
+            // Add sublevel if it doesn't exist (default to 1)
+            if (!rack.sublevel) {
+                rack.sublevel = '1';
+                needsUpdate = true;
+            }
+            
+            // Update rack code to new format R1C1
+            if (needsUpdate) {
+                rack.code = `${rack.zone}${rack.row}${rack.level}${rack.sublevel}`;
+                rack.barcode = rack.code;
+                hasChanges = true;
+                
+                // Add audit entry for the migration
+                this.addAuditEntry('MIGRATE', 'RACK', rack.id, {
+                    oldCode: rack.code,
+                    newCode: rack.code,
+                    reason: 'Format migration: Zone R + Row 1-26 + Column A-Z + Sub-level 1-10'
+                });
+            }
+        });
+
+        if (hasChanges) {
+            this.saveData(data);
+            console.log('Migrated existing racks to new format');
         }
     }
 
@@ -94,6 +156,9 @@ class WarehouseManager {
         return data.racks.filter(rack => 
             rack.code.toLowerCase().includes(searchTerm) ||
             rack.zone.toLowerCase().includes(searchTerm) ||
+            rack.row.toString().toLowerCase().includes(searchTerm) ||
+            rack.level.toLowerCase().includes(searchTerm) ||
+            (rack.sublevel && rack.sublevel.toString().toLowerCase().includes(searchTerm)) ||
             (rack.description && rack.description.toLowerCase().includes(searchTerm))
         );
     }
@@ -331,7 +396,7 @@ class WarehouseManager {
 			// restore
 			const prefs = JSON.parse(localStorage.getItem('user_prefs') || '{}');
 			autoExcelToggle.checked = !!prefs.autoExcel;
-		}
+        }
     }
 
     setCurrentDate() {
@@ -475,13 +540,24 @@ class WarehouseManager {
         }
 
         try {
+            // Clear previous barcode
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Set canvas size for better quality
+            canvas.width = 400;
+            canvas.height = 120;
+            
             JsBarcode(canvas, material.barcode, {
                 format: "CODE128",
                 width: 3,
-                height: 120,
+                height: 80,
                 displayValue: true,
                 fontSize: 16,
-                margin: 16
+                margin: 15,
+                background: "#ffffff",
+                lineColor: "#000000",
+                textMargin: 8
             });
 
             const barcodeInfo = document.getElementById('material-barcode-info');
@@ -493,6 +569,20 @@ class WarehouseManager {
                     <strong>Type:</strong> ${material.type}<br>
                     <strong>Barcode:</strong> ${material.barcode}
                 `;
+            }
+
+            // Generate QR code with same payload
+            const qrContainer = document.getElementById('material-qrcode');
+            if (qrContainer) {
+                qrContainer.innerHTML = '';
+                new QRCode(qrContainer, {
+                    text: material.barcode,
+                    width: 140,
+                    height: 140,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
             }
 
             const barcodeSection = document.getElementById('material-barcode-section');
@@ -509,9 +599,10 @@ class WarehouseManager {
         const zoneEl = document.getElementById('zone');
         const rowEl = document.getElementById('row');
         const levelEl = document.getElementById('level');
+        const sublevelEl = document.getElementById('sublevel');
         const rackDescriptionEl = document.getElementById('rack-description');
 
-        if (!zoneEl || !rowEl || !levelEl) {
+        if (!zoneEl || !rowEl || !levelEl || !sublevelEl) {
             this.showNotification('Form elements not found', 'error');
             return;
         }
@@ -519,10 +610,11 @@ class WarehouseManager {
         const zone = this.sanitizeInput(zoneEl.value);
         const row = this.sanitizeInput(rowEl.value);
         const level = this.sanitizeInput(levelEl.value);
+        const sublevel = this.sanitizeInput(sublevelEl.value);
         const rackDescription = rackDescriptionEl ? this.sanitizeInput(rackDescriptionEl.value.trim()) : '';
 
         const data = this.getData();
-        const rackCode = `${zone}-${row}-${level}`;
+        const rackCode = `${zone}${row}${level}${sublevel}`; // Format: R1C1
         
         // Check if rack already exists
         const existingRack = data.racks.find(rack => rack.code === rackCode);
@@ -537,6 +629,7 @@ class WarehouseManager {
             zone: zone,
             row: row,
             level: level,
+            sublevel: sublevel,
             code: rackCode,
             description: rackDescription,
             barcode: rackCode,
@@ -553,7 +646,8 @@ class WarehouseManager {
             code: rackCode,
             zone: zone,
             row: row,
-            level: level
+            level: level,
+            sublevel: sublevel
         });
 
         this.generateRackBarcode(rack);
@@ -570,24 +664,49 @@ class WarehouseManager {
         }
 
         try {
+            // Clear previous barcode
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Set canvas size for better quality
+            canvas.width = 400;
+            canvas.height = 120;
+            
             JsBarcode(canvas, rack.barcode, {
                 format: "CODE128",
                 width: 3,
-                height: 120,
+                height: 80,
                 displayValue: true,
                 fontSize: 16,
-                margin: 16
+                margin: 15,
+                background: "#ffffff",
+                lineColor: "#000000",
+                textMargin: 8
             });
 
             const barcodeInfo = document.getElementById('rack-barcode-info');
             if (barcodeInfo) {
                 barcodeInfo.innerHTML = `
                     <strong>Rack ID:</strong> ${rack.id}<br>
-                    <strong>Location:</strong> Zone ${rack.zone}, Row ${rack.row}, Level ${rack.level}<br>
+                    <strong>Location:</strong> Zone ${rack.zone}, Row ${rack.row}, Column ${rack.level}, Sub-Level ${rack.sublevel || '1'}<br>
                     <strong>Code:</strong> ${rack.code}<br>
                     ${rack.description ? `<strong>Description:</strong> ${rack.description}<br>` : ''}
                     <strong>Barcode:</strong> ${rack.barcode}
                 `;
+            }
+
+            // Generate QR code with same payload
+            const qrContainer = document.getElementById('rack-qrcode');
+            if (qrContainer) {
+                qrContainer.innerHTML = '';
+                new QRCode(qrContainer, {
+                    text: rack.barcode,
+                    width: 140,
+                    height: 140,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
             }
 
             const barcodeSection = document.getElementById('rack-barcode-section');
@@ -680,7 +799,7 @@ class WarehouseManager {
                 </div>
                 <div class="confirmation-item">
                     <span class="confirmation-label">Rack Location:</span>
-                    <span class="confirmation-value">${rack.code} - Zone ${rack.zone}, Row ${rack.row}, Level ${rack.level}</span>
+                    <span class="confirmation-value">${rack.code} - Zone ${rack.zone}, Row ${rack.row}, Column ${rack.level}, Sub-Level ${rack.sublevel || '1'}</span>
                 </div>
                 <div class="confirmation-item">
                     <span class="confirmation-label">Material Type:</span>
@@ -857,9 +976,11 @@ class WarehouseManager {
                         <span class="item-timestamp">${new Date(rack.timestamp).toLocaleDateString()}</span>
                     </div>
                     <div class="item-details">
+                        <div class="item-detail"><strong>Code:</strong> ${this.escapeHtml(rack.code)}</div>
                         <div class="item-detail"><strong>Zone:</strong> ${this.escapeHtml(rack.zone)}</div>
                         <div class="item-detail"><strong>Row:</strong> ${this.escapeHtml(rack.row)}</div>
-                        <div class="item-detail"><strong>Level:</strong> ${this.escapeHtml(rack.level)}</div>
+                        <div class="item-detail"><strong>Column:</strong> ${this.escapeHtml(rack.level)}</div>
+                        <div class="item-detail"><strong>Sub-Level:</strong> ${this.escapeHtml(rack.sublevel || '1')}</div>
                         <div class="item-detail"><strong>ID:</strong> ${rack.id}</div>
                         ${rack.capacityNote ? `<div class="item-detail"><strong>Capacity:</strong> ${this.escapeHtml(rack.capacityNote)}</div>` : ''}
                         <div class="item-detail"><strong>Created By:</strong> ${this.escapeHtml(rack.createdBy || 'Unknown')}</div>
@@ -1028,7 +1149,7 @@ class WarehouseManager {
             });
             filename = 'materials.csv';
         } else if (type === 'racks') {
-            const headers = ['ID', 'Zone', 'Row', 'Level', 'Code', 'Description', 'Barcode', 'Timestamp'];
+            const headers = ['ID', 'Zone', 'Row', 'Column', 'Sub-Level', 'Code', 'Description', 'Barcode', 'Timestamp'];
             csvContent = headers.join(',') + '\n';
             data.racks.forEach(item => {
                 const row = [
@@ -1068,9 +1189,42 @@ class WarehouseManager {
 
     exportAllData() {
         const data = this.getData();
-        const csvContent = JSON.stringify(data, null, 2);
-        this.downloadFile(csvContent, 'warehouse_data.json', 'application/json');
-        this.showNotification('All data exported successfully', 'success');
+        
+        // Create organized export structure
+        const organizedData = {
+            exportInfo: {
+                system: 'Aviation Warehouse Management System',
+                version: '2.0',
+                exportDate: new Date().toISOString(),
+                totalRecords: data.materials.length + data.racks.length + data.placements.length
+            },
+            summary: {
+                materials: {
+                    total: data.materials.length,
+                    byType: this.getMaterialsByType(data.materials),
+                    bySupplier: this.getMaterialsBySupplier(data.materials)
+                },
+                racks: {
+                    total: data.racks.length,
+                    byZone: this.getRacksByZone(data.racks),
+                    byRow: this.getRacksByRow(data.racks)
+                },
+                placements: {
+                    total: data.placements.length,
+                    recent: this.getRecentPlacements(data.placements)
+                }
+            },
+            data: {
+                materials: data.materials,
+                racks: data.racks,
+                placements: data.placements,
+                auditLog: data.auditLog || []
+            }
+        };
+        
+        const jsonContent = JSON.stringify(organizedData, null, 2);
+        this.downloadFile(jsonContent, 'warehouse_data_organized.json', 'application/json');
+        this.showNotification('Organized data exported successfully', 'success');
     }
 
     // Excel export: builds worksheets for materials, racks, placements, audit
@@ -1080,20 +1234,80 @@ class WarehouseManager {
             const wb = XLSX.utils.book_new();
 
             const matCols = ['id','partNumber','serialNumber','type','description','supplier','receptionMatricule','dateReceived','barcode','createdBy','timestamp'];
-            const rackCols = ['id','zone','row','level','code','description','capacityNote','barcode','createdBy','timestamp'];
+            const rackCols = ['id','zone','row','level','sublevel','code','description','capacityNote','barcode','createdBy','timestamp'];
             const plcCols = ['id','materialId','rackId','materialBarcode','rackBarcode','user','magasinierMatricule','createdBy','timestamp'];
             const audCols = ['id','timestamp','user','action','entityType','entityId','details'];
 
-            const mats = data.materials.map(m => matCols.reduce((o,k)=>{o[k]=m[k]||'';return o;},{}));
-            const racks = data.racks.map(r => rackCols.reduce((o,k)=>{o[k]=r[k]||'';return o;},{}));
-            const plcs = data.placements.map(p => plcCols.reduce((o,k)=>{o[k]=typeof p[k]==='object'?JSON.stringify(p[k]):(p[k]||'');return o;},{}));
-            const audits = (data.auditLog||[]).map(a => audCols.reduce((o,k)=>{o[k]=typeof a[k]==='object'?JSON.stringify(a[k]):(a[k]||'');return o;},{}));
+            // Clean and organize data with proper formatting
+            const mats = data.materials.map(m => ({
+                id: m.id || '',
+                partNumber: m.partNumber || '',
+                serialNumber: m.serialNumber || '',
+                type: m.type || '',
+                description: m.description || '',
+                supplier: m.supplier || '',
+                receptionMatricule: m.receptionMatricule || '',
+                dateReceived: m.dateReceived || '',
+                barcode: m.barcode || '',
+                createdBy: m.createdBy || 'Unknown',
+                timestamp: m.timestamp ? new Date(m.timestamp).toLocaleString() : ''
+            }));
 
+            const racks = data.racks.map(r => ({
+                id: r.id || '',
+                zone: r.zone || '',
+                row: r.row || '',
+                level: r.level || '',
+                sublevel: r.sublevel || '1',
+                code: r.code || '',
+                description: r.description || '',
+                capacityNote: r.capacityNote || '',
+                barcode: r.barcode || '',
+                createdBy: r.createdBy || 'Unknown',
+                timestamp: r.timestamp ? new Date(r.timestamp).toLocaleString() : ''
+            }));
+
+            const plcs = data.placements.map(p => ({
+                id: p.id || '',
+                materialId: p.materialId || '',
+                rackId: p.rackId || '',
+                materialBarcode: p.materialBarcode || '',
+                rackBarcode: p.rackBarcode || '',
+                user: p.user || '',
+                magasinierMatricule: p.magasinierMatricule || '',
+                createdBy: p.createdBy || 'Unknown',
+                timestamp: p.timestamp ? new Date(p.timestamp).toLocaleString() : ''
+            }));
+
+            const audits = (data.auditLog || []).map(a => ({
+                id: a.id || '',
+                timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString() : '',
+                user: a.user || '',
+                action: a.action || '',
+                entityType: a.entityType || '',
+                entityId: a.entityId || '',
+                details: typeof a.details === 'object' ? JSON.stringify(a.details) : (a.details || '')
+            }));
+
+            // Create worksheets with organized data
             const ws1 = XLSX.utils.json_to_sheet(mats, { header: matCols });
             const ws2 = XLSX.utils.json_to_sheet(racks, { header: rackCols });
             const ws3 = XLSX.utils.json_to_sheet(plcs, { header: plcCols });
             const ws4 = XLSX.utils.json_to_sheet(audits, { header: audCols });
 
+            // Apply formatting and styling to worksheets
+            this.formatExcelWorksheet(ws1, 'Materials');
+            this.formatExcelWorksheet(ws2, 'Racks');
+            this.formatExcelWorksheet(ws3, 'Placements');
+            this.formatExcelWorksheet(ws4, 'Audit');
+
+            // Create and add summary sheet
+            const summarySheet = this.createSummarySheet(data);
+            if (summarySheet) {
+                XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+            }
+
+            // Add worksheets to workbook
             XLSX.utils.book_append_sheet(wb, ws1, 'Materials');
             XLSX.utils.book_append_sheet(wb, ws2, 'Racks');
             XLSX.utils.book_append_sheet(wb, ws3, 'Placements');
@@ -1114,6 +1328,429 @@ class WarehouseManager {
             console.error('Excel export error', err);
             this.showNotification('Failed to export Excel', 'error');
         }
+    }
+
+    // Format Excel worksheet with professional styling
+    formatExcelWorksheet(worksheet, sheetName) {
+        try {
+            // Get the range of data
+            const range = XLSX.utils.decode_range(worksheet['!ref']);
+            const lastRow = range.e.r;
+            const lastCol = range.e.c;
+
+            // Apply column widths
+            const columnWidths = {
+                'Materials': [8, 15, 15, 12, 25, 15, 18, 15, 20, 12, 20],
+                'Racks': [8, 8, 8, 8, 8, 12, 25, 20, 12, 12, 20],
+                'Placements': [8, 12, 12, 20, 20, 12, 18, 12, 20],
+                'Audit': [8, 20, 12, 15, 12, 12, 30]
+            };
+
+            const widths = columnWidths[sheetName] || Array(lastCol + 1).fill(12);
+            worksheet['!cols'] = widths.map(width => ({ width }));
+
+            // Apply header styling
+            for (let col = 0; col <= lastCol; col++) {
+                const headerCell = XLSX.utils.encode_cell({ r: 0, c: col });
+                if (worksheet[headerCell]) {
+                    worksheet[headerCell].s = {
+                        font: { bold: true, color: { rgb: "FFFFFF" } },
+                        fill: { fgColor: { rgb: "C40434" } }, // Royal Air Maroc red
+                        alignment: { horizontal: "center", vertical: "center" },
+                        border: {
+                            top: { style: "thin", color: { rgb: "000000" } },
+                            bottom: { style: "thin", color: { rgb: "000000" } },
+                            left: { style: "thin", color: { rgb: "000000" } },
+                            right: { style: "thin", color: { rgb: "000000" } }
+                        }
+                    };
+                }
+            }
+
+            // Apply data row styling
+            for (let row = 1; row <= lastRow; row++) {
+                for (let col = 0; col <= lastCol; col++) {
+                    const cell = XLSX.utils.encode_cell({ r: row, c: col });
+                    if (worksheet[cell]) {
+                        worksheet[cell].s = {
+                            font: { color: { rgb: "000000" } },
+                            fill: { fgColor: { rgb: row % 2 === 0 ? "F8F9FA" : "FFFFFF" } },
+                            alignment: { horizontal: "left", vertical: "center" },
+                            border: {
+                                top: { style: "thin", color: { rgb: "E9ECEF" } },
+                                bottom: { style: "thin", color: { rgb: "E9ECEF" } },
+                                left: { style: "thin", color: { rgb: "E9ECEF" } },
+                                right: { style: "thin", color: { rgb: "E9ECEF" } }
+                            }
+                        };
+                    }
+                }
+            }
+
+            // Freeze the header row
+            worksheet['!freeze'] = { r: 1, c: 0 };
+
+        } catch (error) {
+            console.warn('Worksheet formatting failed:', error);
+        }
+    }
+
+    // Update existing Excel file with warehouse data
+    async updateExistingExcelFile() {
+        try {
+            this.showNotification('Looking for Excel file...', 'info');
+            
+            // Try multiple possible file paths
+            const possiblePaths = [
+                './excel%20file.xlsx',
+                './excel file.xlsx',
+                'excel file.xlsx',
+                './execel%20file%20.xlsx'
+            ];
+            
+            let response = null;
+            let filePath = '';
+            
+            for (const path of possiblePaths) {
+                try {
+                    console.log('Trying to fetch:', path);
+                    response = await fetch(path);
+                    if (response.ok) {
+                        filePath = path;
+                        break;
+                    }
+                } catch (e) {
+                    console.log('Failed to fetch:', path, e);
+                }
+            }
+            
+            if (!response || !response.ok) {
+                throw new Error('Could not find Excel file. Tried: ' + possiblePaths.join(', '));
+            }
+
+            this.showNotification('Excel file found! Reading data...', 'info');
+            
+            const arrayBuffer = await response.arrayBuffer();
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            const data = this.getData();
+
+            this.showNotification('Updating sheets with warehouse data...', 'info');
+
+            // Update or create sheets with warehouse data
+            this.updateExcelSheet(workbook, 'Materials', data.materials, [
+                'id', 'partNumber', 'serialNumber', 'type', 'description', 
+                'supplier', 'receptionMatricule', 'dateReceived', 'barcode', 
+                'createdBy', 'timestamp'
+            ]);
+
+            this.updateExcelSheet(workbook, 'Racks', data.racks, [
+                'id', 'zone', 'row', 'level', 'sublevel', 'code', 'description', 
+                'capacityNote', 'barcode', 'createdBy', 'timestamp'
+            ]);
+
+            this.updateExcelSheet(workbook, 'Placements', data.placements, [
+                'id', 'materialId', 'rackId', 'materialBarcode', 'rackBarcode', 
+                'user', 'magasinierMatricule', 'createdBy', 'timestamp'
+            ]);
+
+            this.updateExcelSheet(workbook, 'Audit', data.auditLog || [], [
+                'id', 'timestamp', 'user', 'action', 'entityType', 'entityId', 'details'
+            ]);
+
+            this.showNotification('Creating updated Excel file...', 'info');
+
+            // Export the updated workbook
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `updated_excel_file.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            this.showNotification('Excel file updated successfully! Downloading...', 'success');
+        } catch (error) {
+            console.error('Error updating Excel file:', error);
+            this.showNotification('Failed to update Excel file: ' + error.message, 'error');
+            
+            // Show detailed error information
+            if (error.message.includes('Could not find')) {
+                this.showNotification('File not found. Please check the file name and location.', 'error');
+            } else if (error.message.includes('fetch')) {
+                this.showNotification('Network error. Make sure you\'re running from a web server, not file://', 'error');
+            }
+        }
+    }
+
+    // Fallback: Create new Excel file if existing one not found
+    createNewExcelFile() {
+        try {
+            this.showNotification('Creating new Excel file with warehouse data...', 'info');
+            
+            const data = this.getData();
+            const wb = XLSX.utils.book_new();
+
+            // Create organized data
+            const mats = data.materials.map(m => ({
+                id: m.id || '',
+                partNumber: m.partNumber || '',
+                serialNumber: m.serialNumber || '',
+                type: m.type || '',
+                description: m.description || '',
+                supplier: m.supplier || '',
+                receptionMatricule: m.receptionMatricule || '',
+                dateReceived: m.dateReceived || '',
+                barcode: m.barcode || '',
+                createdBy: m.createdBy || 'Unknown',
+                timestamp: m.timestamp ? new Date(m.timestamp).toLocaleString() : ''
+            }));
+
+            const racks = data.racks.map(r => ({
+                id: r.id || '',
+                zone: r.zone || '',
+                row: r.row || '',
+                level: r.level || '',
+                sublevel: r.sublevel || '1',
+                code: r.code || '',
+                description: r.description || '',
+                capacityNote: r.capacityNote || '',
+                barcode: r.barcode || '',
+                createdBy: r.createdBy || 'Unknown',
+                timestamp: r.timestamp ? new Date(r.timestamp).toLocaleString() : ''
+            }));
+
+            const plcs = data.placements.map(p => ({
+                id: p.id || '',
+                materialId: p.materialId || '',
+                rackId: p.rackId || '',
+                materialBarcode: p.materialBarcode || '',
+                rackBarcode: p.rackBarcode || '',
+                user: p.user || '',
+                magasinierMatricule: p.magasinierMatricule || '',
+                createdBy: p.createdBy || 'Unknown',
+                timestamp: p.timestamp ? new Date(p.timestamp).toLocaleString() : ''
+            }));
+
+            const audits = (data.auditLog || []).map(a => ({
+                id: a.id || '',
+                timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString() : '',
+                user: a.user || '',
+                action: a.action || '',
+                entityType: a.entityType || '',
+                entityId: a.entityId || '',
+                details: typeof a.details === 'object' ? JSON.stringify(a.details) : (a.details || '')
+            }));
+
+            // Create worksheets
+            const ws1 = XLSX.utils.json_to_sheet(mats, { 
+                header: ['id', 'partNumber', 'serialNumber', 'type', 'description', 'supplier', 'receptionMatricule', 'dateReceived', 'barcode', 'createdBy', 'timestamp'] 
+            });
+            const ws2 = XLSX.utils.json_to_sheet(racks, { 
+                header: ['id', 'zone', 'row', 'level', 'sublevel', 'code', 'description', 'capacityNote', 'barcode', 'createdBy', 'timestamp'] 
+            });
+            const ws3 = XLSX.utils.json_to_sheet(plcs, { 
+                header: ['id', 'materialId', 'rackId', 'materialBarcode', 'rackBarcode', 'user', 'magasinierMatricule', 'createdBy', 'timestamp'] 
+            });
+            const ws4 = XLSX.utils.json_to_sheet(audits, { 
+                header: ['id', 'timestamp', 'user', 'action', 'entityType', 'entityId', 'details'] 
+            });
+
+            // Add worksheets to workbook
+            XLSX.utils.book_append_sheet(wb, ws1, 'Materials');
+            XLSX.utils.book_append_sheet(wb, ws2, 'Racks');
+            XLSX.utils.book_append_sheet(wb, ws3, 'Placements');
+            XLSX.utils.book_append_sheet(wb, ws4, 'Audit');
+
+            // Export
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `warehouse_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            this.showNotification('New Excel file created successfully!', 'success');
+        } catch (error) {
+            console.error('Error creating Excel file:', error);
+            this.showNotification('Failed to create Excel file: ' + error.message, 'error');
+        }
+    }
+
+    // Helper function to update a specific sheet
+    updateExcelSheet(workbook, sheetName, data, columns) {
+        try {
+            // Check if sheet exists, create if not
+            let worksheet = workbook.Sheets[sheetName];
+            if (!worksheet) {
+                worksheet = XLSX.utils.aoa_to_sheet([columns]);
+                workbook.SheetNames.push(sheetName);
+                workbook.Sheets[sheetName] = worksheet;
+            }
+
+            // Clear existing data (keep headers)
+            const range = XLSX.utils.decode_range(worksheet['!ref']);
+            for (let row = 1; row <= range.e.r; row++) {
+                for (let col = 0; col <= range.e.c; col++) {
+                    const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+                    delete worksheet[cellAddress];
+                }
+            }
+
+            // Add new data
+            const formattedData = data.map(item => {
+                const row = {};
+                columns.forEach(col => {
+                    let value = item[col];
+                    if (col === 'timestamp' && value) {
+                        value = new Date(value).toLocaleString();
+                    } else if (typeof value === 'object') {
+                        value = JSON.stringify(value);
+                    }
+                    row[col] = value || '';
+                });
+                return row;
+            });
+
+            // Convert data to worksheet format
+            const newWorksheet = XLSX.utils.json_to_sheet(formattedData, { header: columns });
+            
+            // Copy data to existing worksheet (preserving formatting)
+            Object.keys(newWorksheet).forEach(key => {
+                if (key !== '!ref') {
+                    worksheet[key] = newWorksheet[key];
+                }
+            });
+
+            // Update the range reference
+            worksheet['!ref'] = XLSX.utils.encode_range({
+                s: { r: 0, c: 0 },
+                e: { r: formattedData.length, c: columns.length - 1 }
+            });
+
+        } catch (error) {
+            console.warn(`Failed to update sheet ${sheetName}:`, error);
+        }
+    }
+
+    // Create summary sheet with key statistics
+    createSummarySheet(data) {
+        try {
+            const summaryData = [
+                ['AVIATION WAREHOUSE MANAGEMENT SYSTEM - SUMMARY REPORT'],
+                [''],
+                ['Generated:', new Date().toLocaleString()],
+                [''],
+                ['MATERIALS SUMMARY'],
+                ['Total Materials:', data.materials.length],
+                ['Materials by Type:', this.getMaterialsByType(data.materials)],
+                ['Materials by Supplier:', this.getMaterialsBySupplier(data.materials)],
+                [''],
+                ['RACKS SUMMARY'],
+                ['Total Racks:', data.racks.length],
+                ['Racks by Zone:', this.getRacksByZone(data.racks)],
+                ['Racks by Row:', this.getRacksByRow(data.racks)],
+                [''],
+                ['PLACEMENTS SUMMARY'],
+                ['Total Placements:', data.placements.length],
+                ['Recent Placements:', this.getRecentPlacements(data.placements)],
+                [''],
+                ['SYSTEM INFO'],
+                ['Total Records:', data.materials.length + data.racks.length + data.placements.length],
+                ['Audit Entries:', (data.auditLog || []).length],
+                ['Last Update:', this.getLastUpdateTime(data)]
+            ];
+
+            const ws = XLSX.utils.aoa_to_sheet(summaryData);
+            
+            // Apply summary sheet formatting
+            ws['!cols'] = [{ width: 40 }, { width: 20 }];
+            
+            // Style the title
+            if (ws['A1']) {
+                ws['A1'].s = {
+                    font: { bold: true, size: 16, color: { rgb: "C40434" } },
+                    alignment: { horizontal: "center" }
+                };
+            }
+
+            // Style section headers
+            [5, 10, 15, 20].forEach(row => {
+                const cell = ws[`A${row}`];
+                if (cell) {
+                    cell.s = {
+                        font: { bold: true, color: { rgb: "C40434" } },
+                        fill: { fgColor: { rgb: "F8F9FA" } }
+                    };
+                }
+            });
+
+            return ws;
+        } catch (error) {
+            console.warn('Summary sheet creation failed:', error);
+            return null;
+        }
+    }
+
+    // Helper functions for summary sheet
+    getMaterialsByType(materials) {
+        const types = {};
+        materials.forEach(m => {
+            types[m.type] = (types[m.type] || 0) + 1;
+        });
+        return Object.entries(types).map(([type, count]) => `${type}: ${count}`).join(', ');
+    }
+
+    getMaterialsBySupplier(materials) {
+        const suppliers = {};
+        materials.forEach(m => {
+            if (m.supplier) {
+                suppliers[m.supplier] = (suppliers[m.supplier] || 0) + 1;
+            }
+        });
+        return Object.entries(suppliers).map(([supplier, count]) => `${supplier}: ${count}`).join(', ');
+    }
+
+    getRacksByZone(racks) {
+        const zones = {};
+        racks.forEach(r => {
+            zones[r.zone] = (zones[r.zone] || 0) + 1;
+        });
+        return Object.entries(zones).map(([zone, count]) => `${zone}: ${count}`).join(', ');
+    }
+
+    getRacksByRow(racks) {
+        const rows = {};
+        racks.forEach(r => {
+            rows[r.row] = (rows[r.row] || 0) + 1;
+        });
+        return Object.entries(rows).map(([row, count]) => `${row}: ${count}`).join(', ');
+    }
+
+    getRecentPlacements(placements) {
+        const recent = placements
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, 5);
+        return recent.map(p => `${p.id} (${new Date(p.timestamp).toLocaleDateString()})`).join(', ');
+    }
+
+    getLastUpdateTime(data) {
+        const allTimestamps = [
+            ...data.materials.map(m => m.timestamp),
+            ...data.racks.map(r => r.timestamp),
+            ...data.placements.map(p => p.timestamp)
+        ].filter(t => t);
+        
+        if (allTimestamps.length === 0) return 'Never';
+        
+        const latest = new Date(Math.max(...allTimestamps.map(t => new Date(t))));
+        return latest.toLocaleString();
     }
 
     downloadCSV(content, filename) {
@@ -1205,6 +1842,16 @@ class WarehouseManager {
             } else if (formId === 'rack-form') {
                 const rackBarcodeSection = document.getElementById('rack-barcode-section');
                 if (rackBarcodeSection) rackBarcodeSection.style.display = 'none';
+                // Preserve the zone value as "R"
+                const zoneField = document.getElementById('zone');
+                if (zoneField) zoneField.value = 'R';
+                // Reset other fields to defaults
+                const rowField = document.getElementById('row');
+                if (rowField) rowField.value = '1';
+                const levelField = document.getElementById('level');
+                if (levelField) levelField.value = 'A';
+                const sublevelField = document.getElementById('sublevel');
+                if (sublevelField) sublevelField.value = '1';
             }
         }
     }
@@ -1336,6 +1983,94 @@ class WarehouseManager {
         printWindow.print();
     }
 
+    downloadRackLabel() {
+        const data = this.getData();
+        const rack = data.racks[data.racks.length - 1];
+        
+        if (!rack) {
+            this.showNotification('No rack data available for label', 'error');
+            return;
+        }
+
+        const canvas = document.getElementById('rack-barcode');
+        if (!canvas) {
+            this.showNotification('Barcode not available', 'error');
+            return;
+        }
+        
+        const labelContent = `
+            <html>
+                <head>
+                    <title>Rack Location Label</title>
+                    <style>
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            padding: 40px; 
+                            background: white; 
+                        }
+                        .label { 
+                            border: 2px solid #000; 
+                            padding: 30px; 
+                            text-align: center; 
+                            max-width: 400px; 
+                            margin: 0 auto; 
+                        }
+                        .header { 
+                            font-size: 20px; 
+                            font-weight: bold; 
+                            margin-bottom: 15px; 
+                            color: #333; 
+                        }
+                        .barcode { 
+                            margin: 20px 0; 
+                        }
+                        .details { 
+                            text-align: center; 
+                            margin: 20px 0; 
+                            font-size: 14px; 
+                        }
+                        .location { 
+                            font-size: 18px; 
+                            font-weight: bold; 
+                            color: #C40434; 
+                            margin: 10px 0; 
+                        }
+                        .footer { 
+                            margin-top: 20px; 
+                            font-size: 12px; 
+                            color: #666; 
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="label">
+                        <div class="header">Rack Location Label</div>
+                        <div class="barcode">
+                            <img src="${canvas.toDataURL()}" />
+                        </div>
+                        <div class="details">
+                            <div class="location">${rack.code}</div>
+                            <strong>Zone:</strong> ${rack.zone}<br>
+                            <strong>Row:</strong> ${rack.row}<br>
+                            <strong>Column:</strong> ${rack.level}<br>
+                            <strong>Sub-Level:</strong> ${rack.sublevel || '1'}<br>
+                            ${rack.description ? `<strong>Description:</strong> ${rack.description}<br>` : ''}
+                        </div>
+                        <div class="footer">
+                            Generated: ${new Date().toLocaleString()}<br>
+                            Aviation Warehouse Management System
+                        </div>
+                    </div>
+                </body>
+            </html>
+        `;
+        
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(labelContent);
+        printWindow.document.close();
+        printWindow.print();
+    }
+
     showNotification(message, type = 'info') {
         const notification = document.getElementById('notification');
         const messageEl = document.querySelector('.notification-message');
@@ -1445,104 +2180,51 @@ class WarehouseManager {
         modal.innerHTML = `
             <div class="scanner-content">
                 <h3>Scan ${type === 'material' ? 'Material' : 'Rack'} Barcode</h3>
-                <video id="scanner-video" class="scanner-video" autoplay playsinline></video>
+                <video id="scanner-video" class="scanner-video" autoplay></video>
                 <div class="scanner-actions">
-                    <button class="btn btn--primary" onclick="closeBarcodeScanner()">Close</button>
+                    <button class="btn btn--primary" onclick="closeBarcodeScanner()">Close Scanner</button>
                     <button class="btn btn--secondary" onclick="switchCamera()">Switch Camera</button>
-                    <button class="btn btn--secondary" onclick="toggleTorch()">Toggle Torch</button>
-                    <label class="btn btn--secondary" style="margin-bottom:0;">
-                        From Photo
-                        <input id="scanner-image-input" type="file" accept="image/*" capture="environment" style="display:none;" />
-                    </label>
                 </div>
                 <p style="font-size: 12px; color: var(--color-text-secondary); margin-top: 16px;">
-                    Tips: Good light, fill the frame, hold steady. Printed label should be at least 4–5 cm wide with a blank margin around it.
+                    Position the barcode within the camera view. The scanner will automatically detect and input the code.
                 </p>
             </div>
         `;
 
         document.body.appendChild(modal);
 
-        // Hook image input for decoding from photo
-        const imgInput = modal.querySelector('#scanner-image-input');
-        if (imgInput) {
-            imgInput.addEventListener('change', (e) => {
-                const file = e.target.files && e.target.files[0];
-                if (file) this.decodeFromImageFile(file, type);
-            });
-        }
-
         // Start camera
         this.startCamera(type);
     }
 
-    async startCamera(type, deviceId = null) {
+    async startCamera(type) {
         try {
             const video = document.getElementById('scanner-video');
             this.scannerType = type;
-            const constraints = {
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: deviceId ? undefined : { ideal: 'environment' },
-                    deviceId: deviceId ? { exact: deviceId } : undefined,
-                    advanced: [ { focusMode: 'continuous' } ]
-                }
-            };
-
-            if (this.currentStream) {
-                this.currentStream.getTracks().forEach(t => t.stop());
-                this.currentStream = null;
-            }
-
+            // Prefer back camera
+            const constraints = { video: { facingMode: { ideal: 'environment' } } };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = stream;
             this.currentStream = stream;
 
-            await this.listCameras();
-            if (deviceId) this.currentCameraDeviceId = deviceId;
-
             if (window.ZXing && ZXing.BrowserMultiFormatReader) {
                 const codeReader = new ZXing.BrowserMultiFormatReader();
-                try {
-                    const formats = [
-                        ZXing.BarcodeFormat.CODE_128,
-                        ZXing.BarcodeFormat.CODE_39,
-                        ZXing.BarcodeFormat.EAN_13,
-                        ZXing.BarcodeFormat.EAN_8,
-                        ZXing.BarcodeFormat.ITF
-                    ];
-                    codeReader.hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-                } catch(_) {}
                 this.codeReader = codeReader;
-
-                await codeReader.decodeFromVideoDevice(deviceId || null, 'scanner-video', (result, err) => {
+                await codeReader.decodeFromVideoDevice(null, 'scanner-video', (result, err) => {
                     if (result && result.getText) {
                         const text = result.getText();
-                        const inputId = type === 'material' ? 'material-barcode-input' : 'rack-barcode-input';
-                        const input = document.getElementById(inputId);
+                const inputId = type === 'material' ? 'material-barcode-input' : 'rack-barcode-input';
+                const input = document.getElementById(inputId);
                         if (input) input.value = text;
                         this.showNotification('Barcode scanned successfully', 'success');
                         this.closeBarcodeScanner();
-                    }
+                }
                 });
             }
         } catch (error) {
             this.showNotification('Error accessing camera: ' + error.message, 'error');
-            this.closeBarcodeScanner();
-        }
-    }
-
-    async listCameras() {
-        try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            this.availableCameras = devices.filter(d => d.kind === 'videoinput');
-            if (this.availableCameras.length > 0 && this.currentCameraIndex == null) {
-                this.currentCameraIndex = 0;
+                this.closeBarcodeScanner();
             }
-        } catch(_) {
-            this.availableCameras = [];
-        }
     }
 
     // ZXing replaces the previous simulated detection
@@ -1555,58 +2237,13 @@ class WarehouseManager {
                 this.currentStream.getTracks().forEach(track => track.stop());
                 this.currentStream = null;
             }
-            if (this.codeReader && this.codeReader.reset) {
-                try { this.codeReader.reset(); } catch(_) {}
-            }
             modal.remove();
         }
     }
 
     switchCamera() {
-        if (!this.availableCameras || this.availableCameras.length < 2) {
-            this.showNotification('No alternate camera found', 'info');
-            return;
-        }
-        this.currentCameraIndex = (this.currentCameraIndex + 1) % this.availableCameras.length;
-        const next = this.availableCameras[this.currentCameraIndex];
-        this.startCamera(this.scannerType || 'material', next.deviceId);
-    }
-
-    async toggleTorch() {
-        try {
-            if (!this.currentStream) return;
-            const track = this.currentStream.getVideoTracks()[0];
-            const caps = track.getCapabilities ? track.getCapabilities() : {};
-            if (!('torch' in caps)) {
-                this.showNotification('Torch not supported on this device', 'info');
-                return;
-            }
-            this.torchOn = !this.torchOn;
-            await track.applyConstraints({ advanced: [{ torch: this.torchOn }] });
-        } catch(e) {
-            this.showNotification('Unable to toggle torch', 'error');
-        }
-    }
-
-    async decodeFromImageFile(file, type) {
-        try {
-            if (!(window.ZXing && ZXing.BrowserMultiFormatReader)) return;
-            const url = URL.createObjectURL(file);
-            const codeReader = new ZXing.BrowserMultiFormatReader();
-            const result = await codeReader.decodeFromImageUrl(url);
-            URL.revokeObjectURL(url);
-            if (result && result.getText) {
-                const inputId = type === 'material' ? 'material-barcode-input' : 'rack-barcode-input';
-                const input = document.getElementById(inputId);
-                if (input) input.value = result.getText();
-                this.showNotification('Barcode decoded from photo', 'success');
-                this.closeBarcodeScanner();
-            } else {
-                this.showNotification('No barcode found in photo', 'error');
-            }
-        } catch (e) {
-            this.showNotification('Failed to decode from photo', 'error');
-        }
+        // Implementation for switching between front/back camera
+        this.showNotification('Camera switching not implemented in demo', 'info');
     }
 
     // Load saved Google Sheets configuration on page load
@@ -1795,7 +2432,7 @@ class WarehouseManager {
         let rows = [];
 
         if (type === 'materials') {
-            headers = ['ID', 'Part Number', 'Serial Number', 'Type', 'Description', 'Supplier', 'Date Received', 'Barcode', 'Created By', 'Timestamp'];
+            headers = ['ID', 'Part Number', 'Serial Number', 'Type', 'Description', 'Supplier', 'Reception Matricule', 'Date Received', 'Barcode', 'Created By', 'Timestamp'];
             rows = dataArray.map(item => [
                 item.id,
                 item.partNumber,
@@ -1803,26 +2440,29 @@ class WarehouseManager {
                 item.type,
                 item.description || '',
                 item.supplier || '',
+                item.receptionMatricule || '',
                 item.dateReceived,
                 item.barcode,
                 item.createdBy || 'Unknown',
                 new Date(item.timestamp).toLocaleString()
             ]);
         } else if (type === 'racks') {
-            headers = ['ID', 'Zone', 'Row', 'Level', 'Code', 'Description', 'Barcode', 'Created By', 'Timestamp'];
+            headers = ['ID', 'Zone', 'Row', 'Column', 'Sub-Level', 'Code', 'Description', 'Capacity Note', 'Barcode', 'Created By', 'Timestamp'];
             rows = dataArray.map(item => [
                 item.id,
                 item.zone,
                 item.row,
                 item.level,
+                item.sublevel || '1',
                 item.code,
                 item.description || '',
+                item.capacityNote || '',
                 item.barcode,
                 item.createdBy || 'Unknown',
                 new Date(item.timestamp).toLocaleString()
             ]);
         } else if (type === 'placements') {
-            headers = ['ID', 'Material ID', 'Rack ID', 'Material Barcode', 'Rack Barcode', 'User', 'Created By', 'Timestamp'];
+            headers = ['ID', 'Material ID', 'Rack ID', 'Material Barcode', 'Rack Barcode', 'User', 'Magasinier Matricule', 'Created By', 'Timestamp'];
             rows = dataArray.map(item => [
                 item.id,
                 item.materialId,
@@ -1830,6 +2470,7 @@ class WarehouseManager {
                 item.materialBarcode,
                 item.rackBarcode,
                 item.user,
+                item.magasinierMatricule || '',
                 item.createdBy || 'Unknown',
                 new Date(item.timestamp).toLocaleString()
             ]);
@@ -2442,6 +3083,12 @@ window.downloadCertificate = function() {
     }
 };
 
+window.downloadRackLabel = function() {
+    if (warehouseManager) {
+        warehouseManager.downloadRackLabel();
+    }
+};
+
 window.exportToCSV = function(type) {
     if (warehouseManager) {
         warehouseManager.exportToCSV(type);
@@ -2534,26 +3181,106 @@ window.exportAllToExcel = function() {
     }
 };
 
+window.updateExistingExcelFile = function() {
+    if (warehouseManager) {
+        warehouseManager.updateExistingExcelFile();
+    }
+};
+
+window.createNewExcelFile = function() {
+    if (warehouseManager) {
+        warehouseManager.createNewExcelFile();
+    }
+};
+
 // Microsoft Graph upload (OneDrive/SharePoint) — requires app registration
 window.uploadExcelToOneDrive = async function() {
     try {
         if (!window.XLSX) { alert('Excel library not loaded'); return; }
 
-        // 1) Create workbook in-memory (reuse exporter)
+        // 1) Create workbook in-memory with organized data
         const data = warehouseManager.getData();
         const wb = XLSX.utils.book_new();
+        
+        // Organized column headers
         const matCols = ['id','partNumber','serialNumber','type','description','supplier','receptionMatricule','dateReceived','barcode','createdBy','timestamp'];
-        const rackCols = ['id','zone','row','level','code','description','capacityNote','barcode','createdBy','timestamp'];
+        const rackCols = ['id','zone','row','level','sublevel','code','description','capacityNote','barcode','createdBy','timestamp'];
         const plcCols = ['id','materialId','rackId','materialBarcode','rackBarcode','user','magasinierMatricule','createdBy','timestamp'];
         const audCols = ['id','timestamp','user','action','entityType','entityId','details'];
-        const mats = data.materials.map(m => matCols.reduce((o,k)=>{o[k]=m[k]||'';return o;},{}));
-        const racks = data.racks.map(r => rackCols.reduce((o,k)=>{o[k]=r[k]||'';return o;},{}));
-        const plcs = data.placements.map(p => plcCols.reduce((o,k)=>{o[k]=typeof p[k]==='object'?JSON.stringify(p[k]):(p[k]||'');return o;},{}));
-        const audits = (data.auditLog||[]).map(a => audCols.reduce((o,k)=>{o[k]=typeof a[k]==='object'?JSON.stringify(a[k]):(a[k]||'');return o;},{}));
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mats, { header: matCols }), 'Materials');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(racks, { header: rackCols }), 'Racks');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(plcs, { header: plcCols }), 'Placements');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(audits, { header: audCols }), 'Audit');
+        
+        // Clean and organize data with proper formatting
+        const mats = data.materials.map(m => ({
+            id: m.id || '',
+            partNumber: m.partNumber || '',
+            serialNumber: m.serialNumber || '',
+            type: m.type || '',
+            description: m.description || '',
+            supplier: m.supplier || '',
+            receptionMatricule: m.receptionMatricule || '',
+            dateReceived: m.dateReceived || '',
+            barcode: m.barcode || '',
+            createdBy: m.createdBy || 'Unknown',
+            timestamp: m.timestamp ? new Date(m.timestamp).toLocaleString() : ''
+        }));
+
+        const racks = data.racks.map(r => ({
+            id: r.id || '',
+            zone: r.zone || '',
+            row: r.row || '',
+            level: r.level || '',
+            sublevel: r.sublevel || '1',
+            code: r.code || '',
+            description: r.description || '',
+            capacityNote: r.capacityNote || '',
+            barcode: r.barcode || '',
+            createdBy: r.createdBy || 'Unknown',
+            timestamp: r.timestamp ? new Date(r.timestamp).toLocaleString() : ''
+        }));
+
+        const plcs = data.placements.map(p => ({
+            id: p.id || '',
+            materialId: p.materialId || '',
+            rackId: p.rackId || '',
+            materialBarcode: p.materialBarcode || '',
+            rackBarcode: p.rackBarcode || '',
+            user: p.user || '',
+            magasinierMatricule: p.magasinierMatricule || '',
+            createdBy: p.createdBy || 'Unknown',
+            timestamp: p.timestamp ? new Date(p.timestamp).toLocaleString() : ''
+        }));
+
+        const audits = (data.auditLog || []).map(a => ({
+            id: a.id || '',
+            timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString() : '',
+            user: a.user || '',
+            action: a.action || '',
+            entityType: a.entityType || '',
+            entityId: a.entityId || '',
+            details: typeof a.details === 'object' ? JSON.stringify(a.details) : (a.details || '')
+        }));
+
+        // Create and format worksheets
+        const ws1 = XLSX.utils.json_to_sheet(mats, { header: matCols });
+        const ws2 = XLSX.utils.json_to_sheet(racks, { header: rackCols });
+        const ws3 = XLSX.utils.json_to_sheet(plcs, { header: plcCols });
+        const ws4 = XLSX.utils.json_to_sheet(audits, { header: audCols });
+
+        // Apply professional formatting
+        warehouseManager.formatExcelWorksheet(ws1, 'Materials');
+        warehouseManager.formatExcelWorksheet(ws2, 'Racks');
+        warehouseManager.formatExcelWorksheet(ws3, 'Placements');
+        warehouseManager.formatExcelWorksheet(ws4, 'Audit');
+
+        // Create and add summary sheet
+        const summarySheet = warehouseManager.createSummarySheet(data);
+        if (summarySheet) {
+            XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+        }
+
+        XLSX.utils.book_append_sheet(wb, ws1, 'Materials');
+        XLSX.utils.book_append_sheet(wb, ws2, 'Racks');
+        XLSX.utils.book_append_sheet(wb, ws3, 'Placements');
+        XLSX.utils.book_append_sheet(wb, ws4, 'Audit');
         const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
         // 2) Authenticate with MSAL (Public Client)

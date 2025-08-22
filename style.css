@@ -660,6 +660,26 @@ select.form-control {
   outline: var(--focus-outline);
 }
 
+.form-control[readonly] {
+  background-color: var(--color-bg-6);
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+}
+
+.info-notice {
+  background: var(--color-bg-3);
+  border: 1px solid var(--color-info);
+  padding: var(--space-12);
+  margin-bottom: var(--space-20);
+  border-radius: var(--radius-base);
+  color: var(--color-text);
+}
+
+.info-notice small {
+  opacity: 0.8;
+  font-size: 0.9em;
+}
+
 .form-label {
   display: block;
   margin-bottom: var(--space-8);
@@ -1044,32 +1064,253 @@ select.form-control {
 }
 
 .barcode-section {
-  background-color: var(--color-bg-1);
-  border: 1px solid var(--color-card-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-24);
+  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-1) 100%);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-xl);
+  padding: var(--space-32);
   text-align: center;
+  box-shadow: var(--shadow-lg);
+  transition: all var(--duration-normal) var(--ease-standard);
+  position: relative;
+  overflow: hidden;
+}
+
+.barcode-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover), var(--color-primary));
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .barcode-display {
-  margin: var(--space-20) 0;
-  padding: var(--space-16);
-  background-color: var(--color-surface);
-  border-radius: var(--radius-base);
+  margin: var(--space-24) 0;
+  padding: var(--space-24);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.barcode-display::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, var(--color-primary), transparent, var(--color-primary));
+  border-radius: var(--radius-lg);
+  z-index: -1;
+  opacity: 0.1;
 }
 
 .barcode-info {
-  margin-top: var(--space-12);
+  margin-top: var(--space-16);
+  padding: var(--space-16);
+  background: var(--color-bg-2);
+  border-radius: var(--radius-base);
+  border-left: 4px solid var(--color-primary);
   font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+  color: var(--color-text);
+  text-align: left;
+  line-height: 1.6;
 }
 
 .barcode-actions {
   display: flex;
-  gap: var(--space-12);
+  gap: var(--space-16);
   justify-content: center;
-  margin-top: var(--space-16);
+  margin-top: var(--space-24);
+  flex-wrap: wrap;
+}
+
+/* Enhanced Barcode and QR Code Styling */
+.barcode-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-20);
+  margin: var(--space-20) 0;
+}
+
+.barcode-wrapper {
+  background: white;
+  padding: var(--space-20);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  transition: all var(--duration-normal) var(--ease-standard);
+  position: relative;
+}
+
+.barcode-wrapper:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--color-primary);
+}
+
+.barcode-wrapper::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  background: linear-gradient(45deg, var(--color-primary), var(--color-primary-hover));
+  border-radius: var(--radius-lg);
+  z-index: -1;
+  opacity: 0.3;
+}
+
+.barcode-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--space-8);
+  text-align: center;
+}
+
+.qr-container {
+  background: white;
+  padding: var(--space-16);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  transition: all var(--duration-normal) var(--ease-standard);
+  position: relative;
+  display: inline-block;
+}
+
+.qr-container:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--color-primary);
+}
+
+.qr-container::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  background: linear-gradient(45deg, var(--color-primary), var(--color-primary-hover));
+  border-radius: var(--radius-lg);
+  z-index: -1;
+  opacity: 0.3;
+}
+
+/* Print-specific styles */
+@media print {
+  .barcode-section {
+    box-shadow: none;
+    border: 2px solid #000;
+    background: white;
+  }
+  
+  .barcode-wrapper,
+  .qr-container {
+    box-shadow: none;
+    border: 1px solid #000;
+    background: white;
+  }
+  
+  .barcode-actions {
+    display: none;
+  }
+}
+
+/* Mobile responsiveness for barcode sections */
+@media (max-width: 768px) {
+  .barcode-section {
+    padding: var(--space-20);
+    margin: var(--space-16);
+  }
+  
+  .barcode-container {
+    flex-direction: column;
+    gap: var(--space-16);
+  }
+  
+  .barcode-wrapper,
+  .qr-container {
+    padding: var(--space-16);
+  }
+  
+  .barcode-actions {
+    flex-direction: column;
+    gap: var(--space-12);
+  }
+  
+  .barcode-actions .btn {
+    width: 100%;
+  }
+}
+
+/* Enhanced button styles for barcode actions */
+.barcode-actions .btn {
+  min-width: 140px;
+  padding: var(--space-12) var(--space-20);
+  font-weight: var(--font-weight-medium);
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.barcode-actions .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Loading animation for barcode generation */
+.barcode-loading {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--color-border);
+  border-radius: 50%;
+  border-top-color: var(--color-primary);
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Button text and loading state management */
+.btn-text {
+  display: inline-block;
+}
+
+.btn.loading .btn-text {
+  display: none;
+}
+
+.btn.loading .barcode-loading {
+  display: inline-block;
+}
+
+/* Enhanced barcode and QR code hover effects */
+.barcode-wrapper:hover::before,
+.qr-container:hover::before {
+  opacity: 0.5;
+  transform: scale(1.02);
+}
+
+/* Smooth transitions for all interactive elements */
+.barcode-section * {
+  transition: all var(--duration-fast) var(--ease-standard);
 }
 
 /* Forms */

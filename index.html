@@ -12,6 +12,8 @@
     <script src="https://unpkg.com/@zxing/library@0.20.0"></script>
     <!-- SheetJS for Excel (XLSX) export -->
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- QRCode generator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <!-- MSAL for Microsoft Graph authentication (OneDrive/SharePoint upload) -->
     <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 </head>
@@ -145,13 +147,26 @@
                         </div>
                         <div class="barcode-section" id="material-barcode-section" style="display: none;">
                             <h3>Generated Material Barcode</h3>
-                            <div class="barcode-display">
-                                <canvas id="material-barcode"></canvas>
-                                <div class="barcode-info" id="material-barcode-info"></div>
+                            <div class="barcode-container">
+                                <div class="barcode-wrapper">
+                                    <div class="barcode-label">Barcode</div>
+                                    <canvas id="material-barcode"></canvas>
+                                </div>
+                                <div class="qr-container">
+                                    <div class="barcode-label">QR Code</div>
+                                    <div id="material-qrcode"></div>
+                                </div>
                             </div>
+                            <div class="barcode-info" id="material-barcode-info"></div>
                             <div class="barcode-actions">
-                                <button class="btn btn--primary" onclick="printBarcode('material-barcode')">Print Label</button>
-                                <button class="btn btn--secondary" onclick="downloadCertificate()">Download Certificate</button>
+                                <button class="btn btn--primary" onclick="printBarcode('material-barcode')" id="print-material-btn">
+                                    <span class="btn-text">🖨️ Print Label</span>
+                                    <span class="barcode-loading" style="display: none;"></span>
+                                </button>
+                                <button class="btn btn--secondary" onclick="downloadCertificate()" id="download-material-btn">
+                                    <span class="btn-text">📄 Download Certificate</span>
+                                    <span class="barcode-loading" style="display: none;"></span>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -170,32 +185,29 @@
                 <!-- Rayonnage Tab -->
                 <div id="rayonnage" class="tab-content">
                     <h2>Rayonnage Management</h2>
+                    <div class="info-notice" style="background: #e3f2fd; border: 1px solid #2196f3; padding: 10px; margin-bottom: 20px; border-radius: 4px;">
+                        <strong>New Rack Format:</strong> R1C1 (Zone R + Row 1-26 + Column A-Z + Sub-Level 1-10)<br>
+                        <small>Examples: R1A1, R5B3, R12Z10</small>
+                    </div>
                     <div class="module-container">
                         <div class="form-section">
                             <form id="rack-form" class="rack-form">
                                 <div class="form-group">
                                     <label class="form-label" for="zone">Zone</label>
-                                    <select id="zone" name="zone" class="form-control">
-                                        <option value="A">A</option>
-                                        <option value="B">B</option>
-                                        <option value="C">C</option>
-                                        <option value="D">D</option>
-                                        <option value="E">E</option>
-                                        <option value="F">F</option>
-                                    </select>
+                                    <input type="text" id="zone" name="zone" class="form-control" value="R" readonly>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label" for="row">Row (01-20)</label>
+                                    <label class="form-label" for="row">Row (1-26)</label>
                                     <select id="row" name="row" class="form-control">
-                                        <option value="01">01</option>
-                                        <option value="02">02</option>
-                                        <option value="03">03</option>
-                                        <option value="04">04</option>
-                                        <option value="05">05</option>
-                                        <option value="06">06</option>
-                                        <option value="07">07</option>
-                                        <option value="08">08</option>
-                                        <option value="09">09</option>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5</option>
+                                        <option value="6">6</option>
+                                        <option value="7">7</option>
+                                        <option value="8">8</option>
+                                        <option value="9">9</option>
                                         <option value="10">10</option>
                                         <option value="11">11</option>
                                         <option value="12">12</option>
@@ -207,20 +219,57 @@
                                         <option value="18">18</option>
                                         <option value="19">19</option>
                                         <option value="20">20</option>
+                                        <option value="21">21</option>
+                                        <option value="22">22</option>
+                                        <option value="23">23</option>
+                                        <option value="24">24</option>
+                                        <option value="25">25</option>
+                                        <option value="26">26</option>
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label" for="level">Level (01-10)</label>
+                                    <label class="form-label" for="level">Column (A-Z)</label>
                                     <select id="level" name="level" class="form-control">
-                                        <option value="01">01</option>
-                                        <option value="02">02</option>
-                                        <option value="03">03</option>
-                                        <option value="04">04</option>
-                                        <option value="05">05</option>
-                                        <option value="06">06</option>
-                                        <option value="07">07</option>
-                                        <option value="08">08</option>
-                                        <option value="09">09</option>
+                                        <option value="A">A</option>
+                                        <option value="B">B</option>
+                                        <option value="C">C</option>
+                                        <option value="D">D</option>
+                                        <option value="E">E</option>
+                                        <option value="F">F</option>
+                                        <option value="G">G</option>
+                                        <option value="H">H</option>
+                                        <option value="I">I</option>
+                                        <option value="J">J</option>
+                                        <option value="K">K</option>
+                                        <option value="L">L</option>
+                                        <option value="M">M</option>
+                                        <option value="N">N</option>
+                                        <option value="O">O</option>
+                                        <option value="P">P</option>
+                                        <option value="Q">Q</option>
+                                        <option value="R">R</option>
+                                        <option value="S">S</option>
+                                        <option value="T">T</option>
+                                        <option value="U">U</option>
+                                        <option value="V">V</option>
+                                        <option value="W">W</option>
+                                        <option value="X">X</option>
+                                        <option value="Y">Y</option>
+                                        <option value="Z">Z</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="sublevel">Sub-Level (1-10)</label>
+                                    <select id="sublevel" name="sublevel" class="form-control">
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5</option>
+                                        <option value="6">6</option>
+                                        <option value="7">7</option>
+                                        <option value="8">8</option>
+                                        <option value="9">9</option>
                                         <option value="10">10</option>
                                     </select>
                                 </div>
@@ -237,12 +286,26 @@
                         </div>
                         <div class="barcode-section" id="rack-barcode-section" style="display: none;">
                             <h3>Generated Rack Barcode</h3>
-                            <div class="barcode-display">
-                                <canvas id="rack-barcode"></canvas>
-                                <div class="barcode-info" id="rack-barcode-info"></div>
+                            <div class="barcode-container">
+                                <div class="barcode-wrapper">
+                                    <div class="barcode-label">Barcode</div>
+                                    <canvas id="rack-barcode"></canvas>
+                                </div>
+                                <div class="qr-container">
+                                    <div class="barcode-label">QR Code</div>
+                                    <div id="rack-qrcode"></div>
+                                </div>
                             </div>
+                            <div class="barcode-info" id="rack-barcode-info"></div>
                             <div class="barcode-actions">
-                                <button class="btn btn--primary" onclick="printBarcode('rack-barcode')">Print Label</button>
+                                <button class="btn btn--primary" onclick="printBarcode('rack-barcode')" id="print-rack-btn">
+                                    <span class="btn-text">🖨️ Print Label</span>
+                                    <span class="barcode-loading" style="display: none;"></span>
+                                </button>
+                                <button class="btn btn--secondary" onclick="downloadRackLabel('rack-barcode')" id="download-rack-btn">
+                                    <span class="btn-text">📥 Download</span>
+                                    <span class="barcode-loading" style="display: none;"></span>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -350,6 +413,8 @@
                             <button class="btn btn--primary" onclick="exportAllData()">Export All Data to JSON</button>
                             <button class="btn btn--primary" onclick="exportToGoogleSheets()">📊 Export to Google Sheets</button>
                             <button class="btn btn--secondary" onclick="exportAllToExcel()">📗 Export All to Excel</button>
+                            <button class="btn btn--outline" onclick="updateExistingExcelFile()">📝 Update "excel file.xlsx"</button>
+                            <button class="btn btn--outline" onclick="createNewExcelFile()">🆕 Create New Excel File</button>
                         </div>
 
                             <div class="form-group" style="margin-top:12px;">
